@@ -15,10 +15,12 @@
     "api": "node src/api-server.js",
     "api:dev": "node --watch src/api-server.js",
     "docker:build": "docker build -t crawlee-api .",
+    "docker:build:amd64": "docker build -t ghcr.io/j-zulick/crawlee-server:latest . && docker tag ghcr.io/j-zulick/crawlee-server:latest ghcr.io/j-zulick/crawlee-server:latest && docker push ghcr.io/j-zulick/crawlee-server:latest",
     "docker:run": "docker run -p 3000:3000 crawlee-api",
     "docker:compose": "docker-compose up -d",
     "docker:compose:down": "docker-compose down",
-    "test": "node -e \"console.log('✅ Crawlee project is working correctly!'); console.log('📋 Available commands:'); console.log('   npm start          - Basic crawler'); console.log('   npm run advanced   - Advanced crawler'); console.log('   npm run configurable - Configurable crawler'); console.log('   npm run analyze    - Data analysis'); console.log('   npm run api        - REST API server'); console.log('   npm run docker:compose - Start with Docker Compose');\""
+    "deploy:manual": "echo 'Manual deployment: 1) npm run docker:build:amd64 2) SSH to server and run: cd /etc/komodo/stacks/crawlee-stack && sudo docker pull ghcr.io/j-zulick/crawlee-server:latest && sudo komodo stack deploy crawlee-stack'",
+    "test": "node -e \"console.log('✅ Crawlee project is working correctly!'); console.log('📋 Available commands:'); console.log('   npm start          - Basic crawler'); console.log('   npm run advanced   - Advanced crawler'); console.log('   npm run configurable - Configurable crawler'); console.log('   npm run analyze    - Data analysis'); console.log('   npm run api        - REST API server'); console.log('   npm run docker:compose - Start with Docker Compose'); console.log('   npm run docker:build:amd64 - Build and push to GitHub Container Registry'); console.log('   npm run deploy:manual - Copy config and deploy to Komodo');\""
   },
   "keywords": [
     "crawlee",
