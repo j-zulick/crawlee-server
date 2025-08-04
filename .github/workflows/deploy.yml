@@ -61,27 +61,80 @@ jobs:
           # Login to GitHub Container Registry
           echo ${{ secrets.TOKEN }} | sudo docker login ghcr.io -u ${{ secrets.USERNAME }} --password-stdin
           
-          # Pull the latest image with new tag
-          echo "📥 Pulling Docker image..."
-          sudo docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          # Check if docker-compose.yml exists, if not create it
+          if [ ! -f "/etc/komodo/stacks/crawlee-stack/docker-compose.yml" ]; then
+            echo "🔧 Creating docker-compose.yml..."
+            sudo mkdir -p /etc/komodo/stacks/crawlee-stack
+            sudo tee /etc/komodo/stacks/crawlee-stack/docker-compose.yml > /dev/null << 'EOF'
+          services:
+            crawlee-api:
+              image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+              container_name: crawlee-api
+              restart: unless-stopped
+              ports:
+                - "3000:3000"
+              environment:
+                - NODE_ENV=production
+                - PORT=3000
+              healthcheck:
+                test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+                interval: 30s
+                timeout: 10s
+                retries: 3
+                start_period: 40s
+              deploy:
+                resources:
+                  limits:
+                    memory: 1G
+                    cpus: '1.0'
+                  reservations:
+                    memory: 512M
+                    cpus: '0.5'
+              networks:
+                - crawlee-network
           
-          # Update the image tag in docker-compose.yml
-          echo "🏷️  Updating image tag..."
-          sudo sed -i "s|image:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}|" /etc/komodo/stacks/crawlee-stack/docker-compose.yml
+          networks:
+            crawlee-network:
+              driver: bridge
+          EOF
+            sudo chown -R root:root /etc/komodo/stacks/crawlee-stack
+            sudo chmod 644 /etc/komodo/stacks/crawlee-stack/docker-compose.yml
+          else
+            # Pull the latest image with new tag
+            echo "📥 Pulling Docker image..."
+            sudo docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            
+            # Update the image tag in docker-compose.yml
+            echo "🏷️  Updating image tag..."
+            sudo sed -i "s|image:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}|" /etc/komodo/stacks/crawlee-stack/docker-compose.yml
+          fi
           
-          # Restart the stack
+          # Restart the stack using docker compose
           echo "🔄 Restarting stack..."
-          sudo komodo stack deploy crawlee-stack
+          cd /etc/komodo/stacks/crawlee-stack
+          sudo docker compose down
+          sudo docker compose up -d
           
           # Wait for restart
           echo "⏳ Waiting for restart..."
-          sleep 10
+          sleep 15
           
-          # Check health
+          # Check health with retries
           echo "🏥 Checking service health..."
-          if curl -f http://localhost:3000/health; then
-            echo "✅ Deployment successful - service is healthy"
-          else
-            echo "❌ Deployment failed - service is not responding"
+          for i in {1..5}; do
+            if curl -f http://localhost:3000/health; then
+              echo "✅ Deployment successful - service is healthy"
+              break
+            else
+              echo "⏳ Attempt $i/5: Service not ready yet, waiting..."
+              sleep 5
+            fi
+          done
+          
+          # Final check
+          if ! curl -f http://localhost:3000/health; then
+            echo "❌ Deployment failed - service is not responding after 5 attempts"
+            echo "📋 Container logs:"
+            sudo docker logs crawlee-api --tail 20
             exit 1
           fi 
