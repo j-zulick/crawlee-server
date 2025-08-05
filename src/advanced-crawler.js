@@ -3,6 +3,7 @@ import { CheerioCrawler, Dataset } from 'crawlee';
 const startUrls = ['https://www.groupon.com/travel/luxury'];
 
 // Data structure for extracted deals
+// change 1
 const extractDealData = ($, url) => {
     const deals = [];
     
