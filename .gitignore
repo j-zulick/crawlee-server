@@ -62,3 +62,7 @@ jspm_packages/
 .Trashes
 ehthumbs.db
 Thumbs.db 
+# secrets
+*.token
+*.key
+.env*
