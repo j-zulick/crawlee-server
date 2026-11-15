@@ -2,7 +2,9 @@
 import { CheerioCrawler, Configuration, RequestQueue, ProxyConfiguration, log, LogLevel } from '@crawlee/cheerio';
 import { randomUUID } from 'node:crypto';
 import { checkUrl, UrlRefused } from './ssrf.mjs';
+import { load } from 'cheerio';
 import { extractVehicle, extractGeneric, looksLikeListing } from './extract.mjs';
+import { Firecrawl, firecrawlPolicy, looksClientRendered } from './firecrawl.mjs';
 
 log.setLevel(process.env.CRAWL_LOG_LEVEL === 'debug' ? LogLevel.DEBUG : LogLevel.WARNING);
 
@@ -15,7 +17,8 @@ export function crawlPolicy(env = {}) {
     allowPrivateHosts: new Set(String(env.CRAWL_ALLOW_PRIVATE_HOSTS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean)),
     respectRobots: env.CRAWL_IGNORE_ROBOTS !== 'true',
     proxyUrl: env.CRAWL_PROXY_URL || null,
-    userAgent: env.CRAWL_USER_AGENT || 'crawlee-server/2.0 (+self-hosted; respects robots.txt)',
+    userAgent: env.CRAWL_USER_AGENT || (env.CRAWL_IGNORE_ROBOTS === 'true' ? 'crawlee-server/2.0 (+self-hosted)' : 'crawlee-server/2.0 (+self-hosted; respects robots.txt)'),
+    firecrawl: firecrawlPolicy(env),
   });
 }
 
@@ -26,7 +29,13 @@ export function validateRequest(body, policy) {
   const start = Array.isArray(body.start_urls) ? body.start_urls : body.url ? [body.url] : [];
   if (!start.length || start.length > 10 || !start.every(u => typeof u === 'string' && u.length < 2048)) throw new BadRequest('start_urls_1_to_10');
   const mode = body.mode ?? 'crawl';
-  if (!['page', 'crawl', 'sitemap'].includes(mode)) throw new BadRequest('mode_must_be_page_crawl_or_sitemap');
+  if (!['page', 'crawl', 'sitemap', 'map'].includes(mode)) throw new BadRequest('mode_must_be_page_crawl_sitemap_or_map');
+  let render = body.render ?? 'auto';
+  if (!['auto', 'never', 'always'].includes(render)) throw new BadRequest('render_must_be_auto_never_or_always');
+  if (!policy.firecrawl) {
+    if (render === 'always' || mode === 'map') throw new BadRequest('firecrawl_not_configured');
+    render = 'never';
+  }
   const profile = body.profile ?? 'generic';
   if (!['vehicle', 'generic'].includes(profile)) throw new BadRequest('profile_must_be_vehicle_or_generic');
   const strs = (v, name, max = 20) => { if (v === undefined) return []; if (!Array.isArray(v) || v.length > max || !v.every(s => typeof s === 'string' && s.length < 300)) throw new BadRequest(name + '_invalid'); return v; };
@@ -34,7 +43,7 @@ export function validateRequest(body, policy) {
   if (typeof selectors !== 'object' || Array.isArray(selectors) || Object.keys(selectors).length > 20 || !Object.values(selectors).every(s => typeof s === 'string' && s.length < 300)) throw new BadRequest('selectors_invalid');
   const int = (v, d, lo, hi) => { const n = v === undefined ? d : Number(v); if (!Number.isInteger(n) || n < lo || n > hi) throw new BadRequest('number_out_of_range'); return n; };
   return {
-    start_urls: start, mode, profile, selectors,
+    start_urls: start, mode, profile, selectors, render,
     include: strs(body.include_patterns, 'include_patterns'),
     exclude: strs(body.exclude_patterns, 'exclude_patterns'),
     link_selector: typeof body.link_selector === 'string' && body.link_selector.length < 300 ? body.link_selector : 'a[href]',
@@ -68,7 +77,7 @@ async function sitemapUrls(startUrl, policy, cap, fetcher = fetch) {
 
 const globToRe = g => new RegExp('^' + g.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*/g, '\u0000').replace(/\*/g, '[^/?#]*').replace(/\u0000/g, '.*') + '$');
 
-export async function runCrawl(reqBody, policy = crawlPolicy(process.env), { fetcher = fetch } = {}) {
+export async function runCrawl(reqBody, policy = crawlPolicy(process.env), { fetcher = fetch, firecrawlFetcher = fetch } = {}) {
   const req = validateRequest(reqBody, policy);
   const started = Date.now();
   const id = randomUUID();
@@ -81,6 +90,47 @@ export async function runCrawl(reqBody, policy = crawlPolicy(process.env), { fet
 
   const records = []; const failures = []; const refused = []; const byKey = new Map();
   const skippedCounts = {}; let pages = 0; let duplicates = 0; let stoppedReason = null;
+  const fc = new Firecrawl(policy.firecrawl, { fetcher: firecrawlFetcher });
+  const fcStats = { rendered: 0, fallback_after_http_failure: 0, failures: [], budget_skips: 0, map_urls: 0 };
+
+  // Fetch one page through Firecrawl's browser. Returns { $, finalUrl } or null (and records why).
+  const render = async url => {
+    if (fcStats.rendered + fcStats.failures.length >= policy.firecrawl.maxRendersPerCrawl) { fcStats.budget_skips++; return null; }
+    const r = await fc.scrapeHtml(url);
+    if (!r.ok) { fcStats.failures.push({ url, outcome: r.outcome }); return null; }
+    let finalUrl = r.final_url || url;
+    try { await checkUrl(finalUrl, policy); } catch (e) { refused.push({ url: finalUrl, reason: e instanceof UrlRefused ? e.reason : 'invalid_url' }); return null; }
+    if (!onSite(finalUrl)) { refused.push({ url: finalUrl, reason: 'redirected_off_site' }); return null; }
+    fcStats.rendered++;
+    return { $: load(r.html), finalUrl };
+  };
+  const linksFrom = ($, pageUrl) => {
+    const out = new Set();
+    $(req.link_selector).each((_, el) => { const h = $(el).attr('href'); if (!h) return; try { const u = new URL(h, pageUrl); u.hash = ''; if (['http:', 'https:'].includes(u.protocol) && wanted(u.href)) out.add(u.href); } catch {} });
+    return [...out];
+  };
+  // Extraction shared by both fetch paths; `via` records how the page was fetched.
+  const emit = ($, finalUrl, via) => {
+    if (include.length && !isDetail(finalUrl)) return; // index / navigation page: follow links, emit nothing
+    if (req.profile === 'vehicle') {
+      const rec = extractVehicle($, finalUrl, { selectors: req.selectors });
+      if (req.listings_only && !looksLikeListing(rec)) return;
+      const key = rec.vin || finalUrl;
+      if (byKey.has(key)) { duplicates++; byKey.get(key).duplicate_urls.push(finalUrl); return; }
+      const out = { ...rec, fetched_via: via, duplicate_urls: [] }; byKey.set(key, out); records.push(out);
+    } else {
+      records.push({ ...extractGeneric($, finalUrl, { fields: req.selectors }), fetched_via: via });
+    }
+  };
+  // render=auto: re-fetch through Firecrawl when the HTML looks JavaScript-built, or when a page that should be a
+  // listing (matches include_patterns) yields no listing from the plain HTML.
+  const needsRender = ($, finalUrl) => {
+    if (req.render === 'always') return true;
+    if (req.render !== 'auto') return false;
+    if (looksClientRendered($)) return true;
+    if (req.profile === 'vehicle' && include.length && isDetail(finalUrl)) return !looksLikeListing(extractVehicle($, finalUrl, { selectors: req.selectors }));
+    return false;
+  };
 
   const config = new Configuration({ persistStorage: false, purgeOnStart: true, availableMemoryRatio: 0.5 });
   const queue = await RequestQueue.open(id, { config });
@@ -89,6 +139,15 @@ export async function runCrawl(reqBody, policy = crawlPolicy(process.env), { fet
     const fromMap = [];
     for (const s of req.start_urls) fromMap.push(...await sitemapUrls(s, policy, req.max_pages, fetcher).catch(e => { failures.push({ url: s, error: e instanceof UrlRefused ? e.reason : 'sitemap_unavailable' }); return []; }));
     seeds = fromMap.filter(u => wanted(u) && isDetail(u));
+    if (!seeds.length) seeds = req.start_urls;
+  } else if (req.mode === 'map') {
+    const found = [];
+    for (const s of req.start_urls) {
+      const r = await fc.map(s, { limit: Math.min(req.max_pages * 4, 1000) });
+      if (r.ok) found.push(...r.links); else fcStats.failures.push({ url: s, outcome: 'map_' + r.outcome });
+    }
+    fcStats.map_urls = found.length;
+    seeds = [...new Set(found)].filter(u => wanted(u) && isDetail(u));
     if (!seeds.length) seeds = req.start_urls;
   }
   await queue.addRequests(seeds.slice(0, req.max_pages).map(u => ({ url: u, userData: { depth: 0 } })));
@@ -116,25 +175,41 @@ export async function runCrawl(reqBody, policy = crawlPolicy(process.env), { fet
       if (!onSite(finalUrl)) { refused.push({ url: finalUrl, reason: 'redirected_off_site' }); return; }
       if (depth > 0 && !wanted(finalUrl)) { refused.push({ url: finalUrl, reason: 'excluded_after_redirect' }); return; }
       pages++;
+      let page$ = $, pageUrl = finalUrl, via = 'http';
+      if (needsRender($, finalUrl)) {
+        const r = await render(finalUrl);
+        if (r) { page$ = r.$; pageUrl = r.finalUrl; via = 'firecrawl'; }
+      }
       if (req.mode === 'crawl' && depth < req.max_depth) {
-        await enqueueLinks({
-          selector: req.link_selector, strategy: 'same-hostname',
-          transformRequestFunction: r => (wanted(r.url) ? { ...r, userData: { depth: depth + 1 } } : false),
-        });
+        if (via === 'http') {
+          await enqueueLinks({
+            selector: req.link_selector, strategy: 'same-hostname',
+            transformRequestFunction: r => (wanted(r.url) ? { ...r, userData: { depth: depth + 1 } } : false),
+          });
+        } else {
+          const urls = linksFrom(page$, pageUrl);
+          if (urls.length) await enqueueLinks({ urls, transformRequestFunction: r => ({ ...r, userData: { depth: depth + 1 } }) });
+        }
       }
-      if (include.length && !isDetail(finalUrl)) return; // index / navigation page: follow links, emit nothing
-      if (req.profile === 'vehicle') {
-        const rec = extractVehicle($, finalUrl, { selectors: req.selectors });
-        if (req.listings_only && !looksLikeListing(rec)) return;
-        const key = rec.vin || finalUrl;
-        if (byKey.has(key)) { duplicates++; byKey.get(key).duplicate_urls.push(finalUrl); return; }
-        const out = { ...rec, duplicate_urls: [] }; byKey.set(key, out); records.push(out);
-      } else {
-        records.push(extractGeneric($, finalUrl, { fields: req.selectors }));
-      }
+      emit(page$, pageUrl, via);
     },
-    failedRequestHandler({ request, error }) {
-      failures.push({ url: request.url, error: error instanceof UrlRefused ? error.reason : String(error?.message || error).slice(0, 160) });
+    async failedRequestHandler({ request, error }) {
+      const reason = error instanceof UrlRefused ? error.reason : String(error?.message || error).slice(0, 160);
+      // Plain HTTP failed (blocked, 403, timeout): try the same URL through Firecrawl before giving up.
+      if (!(error instanceof UrlRefused) && req.render !== 'never') {
+        const r = await render(request.url);
+        if (r) {
+          fcStats.fallback_after_http_failure++; pages++;
+          const depth = request.userData.depth ?? 0;
+          if (req.mode === 'crawl' && depth < req.max_depth) {
+            const urls = linksFrom(r.$, r.finalUrl);
+            if (urls.length) await queue.addRequests(urls.map(u => ({ url: u, userData: { depth: depth + 1 } })));
+          }
+          emit(r.$, r.finalUrl, 'firecrawl');
+          return;
+        }
+      }
+      failures.push({ url: request.url, error: reason });
     },
   }, config);
 
@@ -146,10 +221,13 @@ export async function runCrawl(reqBody, policy = crawlPolicy(process.env), { fet
   return {
     status: records.length ? (failures.length ? 'partial' : 'ok') : (failures.length || refused.length ? 'failed' : 'no_records'),
     crawl_id: id, profile: req.profile, mode: req.mode,
+    firecrawl: { enabled: fc.enabled, render: req.render, pages_rendered: fcStats.rendered, http_failures_recovered: fcStats.fallback_after_http_failure, map_urls_found: fcStats.map_urls, render_budget_skips: fcStats.budget_skips, failures: fcStats.failures.slice(0, 20) },
     stats: { pages_fetched: pages, skipped: refused.length, links_not_followed: skippedCounts, records: records.length, duplicates, failures: failures.length, records_missing_required: missing, seconds: Math.round((Date.now() - started) / 100) / 10, stopped: stoppedReason },
     records, failures: failures.slice(0, 50), refused: refused.slice(0, 50),
     limitations: [
-      'Static HTML only (CheerioCrawler): data rendered by JavaScript is not seen; use read_page (Camoufox tier) for those pages.',
+      fc.enabled
+        ? `Pages built by JavaScript or blocked for plain HTTP are fetched through Firecrawl (render=${req.render}, at most ${policy.firecrawl.maxRendersPerCrawl} per crawl); each record's fetched_via says how it was fetched.`
+        : 'Static HTML only (Firecrawl not configured): data rendered by JavaScript is not seen.',
       'Fixed extraction (JSON-LD, microdata, then selectors). Records listing missing_required fields are candidates for LLM fallback.',
       policy.respectRobots ? 'robots.txt is respected; disallowed pages are listed under refused (skipped_robotsTxt).' : 'robots.txt checking is OFF.',
     ],

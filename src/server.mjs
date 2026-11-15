@@ -25,7 +25,7 @@ export function createServer({ env = process.env, crawl = runCrawl } = {}) {
 
   return http.createServer(async (req, res) => {
     try {
-      if (req.method === 'GET' && req.url === '/healthz') return send(res, 200, { ok: true, version: VERSION, running, queued: waiters.length, served });
+      if (req.method === 'GET' && req.url === '/healthz') return send(res, 200, { ok: true, version: VERSION, firecrawl: !!policy.firecrawl, robots: policy.respectRobots ? 'respected' : 'ignored', running, queued: waiters.length, served });
       if (!timingSafeEqual(digest(req.headers.authorization || ''), want)) return send(res, 401, { error: 'unauthorized' });
       if (req.method !== 'POST' || req.url !== '/v1/crawl') return send(res, 404, { error: 'not_found' });
       if (!/^application\/json/.test(req.headers['content-type'] || '')) return send(res, 415, { error: 'json_required' });
