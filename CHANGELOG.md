@@ -12,11 +12,11 @@ A rebuild of the 2025 prototype into one service.
 - Per-field provenance (`extractor`), `missing_required`, VIN check digit (vehicle profile).
 - SSRF guard on every start, followed, redirected and Firecrawl-final URL.
 - Offline test suite (fixture site, fake Firecrawl) that also runs inside the Docker build.
-- CI on Node 22 and 24, secret scan, CodeQL, Dependabot; tagged releases publish multi-arch GHCR images with an
+- CI on Node 22, 24 and 26, secret scan, CodeQL, Dependabot; tagged releases publish multi-arch GHCR images with an
   SBOM, provenance and an attestation.
 
 ### Changed
-- Node 24 image, Crawlee 3.18, Cheerio 1.2, zod 4. Express and the per-script crawlers are gone.
+- Node 26 (LTS) image, Crawlee 3.18, Cheerio 1.2, zod 4; CI tests Node 22, 24 and 26. Express and the per-script crawlers are gone.
 - Deploys pull a pinned image tag; CI no longer logs in to the server.
 
 ### Removed

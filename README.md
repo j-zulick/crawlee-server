@@ -113,7 +113,7 @@ rendered, blocked pages recovered, failures) and `limitations`.
 ## Develop
 
 ```bash
-npm ci && npm test          # offline: fixture site + fake Firecrawl, no internet needed
+npm ci && npm test          # offline: fixture site + fake Firecrawl, no internet needed (Node 22, 24 or 26)
 docker build -t crawlee-server .   # the build runs the tests too
 ```
 
