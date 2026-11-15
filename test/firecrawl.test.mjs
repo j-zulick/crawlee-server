@@ -8,7 +8,7 @@ import { inventory, page } from './fixture-site.mjs';
 import { runCrawl, crawlPolicy, validateRequest, BadRequest } from '../src/crawl.mjs';
 import { looksClientRendered, firecrawlPolicy } from '../src/firecrawl.mjs';
 
-const KEY = 'fc-test-key-0123456789abcdef';
+const KEY = 'fc-test-key-0123456789abcdef'; // gitleaks:allow (fake key for the fake Firecrawl server)
 const listen = srv => new Promise(r => srv.listen(0, '127.0.0.1', () => r(`http://127.0.0.1:${srv.address().port}`)));
 
 // Site: /spa (index with real links) -> /spa/item/N (empty app shell); /blocked (index) -> /blocked/item/N (403).
