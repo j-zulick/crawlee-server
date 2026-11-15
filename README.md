@@ -1,273 +1,124 @@
-# Crawlee Server
+# crawlee-server
 
-A web scraping project using [Crawlee](https://crawlee.dev/) to crawl and extract data from groupon.com/travel/luxury.
+[![ci](https://github.com/j-zulick/crawlee-server/actions/workflows/ci.yml/badge.svg)](https://github.com/j-zulick/crawlee-server/actions/workflows/ci.yml)
+[![codeql](https://github.com/j-zulick/crawlee-server/actions/workflows/codeql.yml/badge.svg)](https://github.com/j-zulick/crawlee-server/actions/workflows/codeql.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Features
+**TL;DR:** a self-hosted crawling API. Give it a site and get back structured records instead of raw HTML.
+[Crawlee](https://crawlee.dev) handles the fast, bounded crawl; [Firecrawl](https://github.com/firecrawl/firecrawl)
+renders the pages that need JavaScript or block plain requests. Every record says where each field came from and how
+the page was fetched. One container, one token, safe against requests to private addresses.
 
-- **CheerioCrawler**: Fast HTML parsing using Cheerio
-- **Link Extraction**: Extracts all `<a href>` links from pages
-- **Same-domain Crawling**: Follows internal links within the same domain
-- **Request Limiting**: Prevents runaway crawls with configurable limits
-- **Error Handling**: Robust error handling and retry logic
+- **What:** `POST /v1/crawl` → records (title, text, schema.org product data, your own CSS fields, or vehicle listings).
+- **Why:** browser-only scrapers are slow and costly; plain HTTP misses JavaScript-built pages. This uses plain HTTP
+  first and Firecrawl only where it is needed, and tells you which pages needed it.
+- **Who:** anyone collecting a catalogue, listing set or docs section from a known site: research and SEO tooling,
+  data pipelines, AI agents that need clean records rather than page dumps.
 
-## Prerequisites
-
-- Node.js 18+ 
-- npm or yarn
-
-## Installation
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd crawlee-server
-```
-
-2. Install dependencies:
-```bash
-npm install
-```
-
-## Usage
-
-### Basic Usage
-
-Run the basic crawler:
-```bash
-npm start
-```
-
-### Advanced Crawler
-
-Run the advanced crawler with data extraction:
-```bash
-npm run advanced
-```
-
-### Configurable Crawler
-
-Run the configurable crawler (uses config.js):
-```bash
-npm run configurable
-```
-
-### Development Mode
-
-Run with file watching for development:
-```bash
-npm run dev
-npm run advanced:dev
-npm run configurable:dev
-```
-
-### Data Analysis
-
-After running a crawler, analyze the collected data:
-```bash
-npm run analyze
-```
-
-### REST API Server
-
-Start the REST API server:
-```bash
-npm run api
-```
-
-### Docker Deployment
-
-Build and run with Docker:
-```bash
-# Build Docker image
-npm run docker:build
-
-# Run container
-npm run docker:run
-
-# Or use Docker Compose
-npm run docker:compose
-```
-
-## Configuration
-
-The crawler is configured in `src/main.js` with the following settings:
-
-- **Start URL**: `https://www.groupon.com/travel/luxury`
-- **Max Requests**: 10 (prevents runaway crawls)
-- **Request Timeout**: 60 seconds
-- **Max Retries**: 3
-- **Strategy**: Same-domain link following
-
-## Project Structure
-
-```
-crawlee-server/
-├── src/
-│   ├── main.js                    # Basic crawler script
-│   ├── advanced-crawler.js        # Advanced crawler with data extraction
-│   ├── configurable-crawler.js    # Configurable crawler using config
-│   ├── config.js                  # Configuration file
-│   ├── analyze-data.js            # Data analysis and export utility
-│   └── api-server.js              # REST API server
-├── examples/
-│   └── client-example.js          # API client example
-├── Dockerfile                     # Docker container configuration
-├── docker-compose.yml             # Docker Compose configuration
-├── .dockerignore                  # Docker ignore rules
-├── API.md                         # REST API documentation
-├── package.json                   # Project dependencies
-├── .gitignore                    # Git ignore rules
-└── README.md                     # This file
-```
-
-## Customization
-
-### Changing the Target URL
-
-Edit the `startUrls` array in `src/main.js`:
-
-```javascript
-const startUrls = ['https://your-target-site.com'];
-```
-
-### Adjusting Crawl Limits
-
-Modify the crawler configuration:
-
-```javascript
-const crawler = new CheerioCrawler({
-    // ... other options
-    maxRequestsPerCrawl: 50, // Increase for more pages
-    maxRequestRetries: 5,     // Increase retry attempts
-});
-```
-
-### Adding Data Extraction
-
-Extend the `requestHandler` to extract specific data:
-
-```javascript
-async requestHandler({ request, $, enqueueLinks, log }) {
-    log.info(`Crawling: ${request.url}`);
-
-    // Extract page title
-    const title = $('title').text();
-    console.log('Page title:', title);
-
-    // Extract specific elements
-    $('.product-item').each((index, el) => {
-        const name = $(el).find('.product-name').text();
-        const price = $(el).find('.product-price').text();
-        console.log(`Product: ${name} - ${price}`);
-    });
-
-    // Continue crawling
-    await enqueueLinks({
-        strategy: 'same-domain',
-    });
-}
-```
-
-## Output
-
-### Basic Crawler
-- All discovered links to the console
-- Crawling progress and status messages
-- Error messages if any issues occur
-
-### Advanced & Configurable Crawlers
-- Extracted deal data saved to Crawlee dataset
-- Page metadata and statistics
-- Sample deals logged to console
-- Comprehensive error handling
-
-### Data Analysis
-After running a crawler, use `npm run analyze` to:
-- View dataset statistics
-- Export data to JSON files
-- Generate CSV summaries
-- Analyze deal patterns and stores
-
-### REST API
-The API provides stateless crawling endpoints:
-- **GET /health** - Health check
-- **POST /crawl/basic** - Basic crawling
-- **POST /crawl/advanced** - Advanced crawling with data extraction
-- **POST /crawl/configurable** - Configurable crawling
-- **GET /config** - Get current configuration
-- **PUT /config** - Update configuration
-
-See [API.md](API.md) for complete documentation.
-
-## Storage
-
-Crawlee automatically creates a `storage/` directory to store:
-- Request queue
-- Crawling results
-- Logs and debugging information
-
-This directory is ignored by git (see `.gitignore`).
-
-## Docker Deployment
-
-### Stateless Container
-
-The project is designed as a stateless Docker container:
+## Try it in 2 minutes
 
 ```bash
-# Build the image
-docker build -t crawlee-api .
+docker run -d --name crawlee-server -p 127.0.0.1:8794:8794 \
+  -e CRAWL_TOKEN="$(openssl rand -hex 32 | tee crawl.token)" \
+  ghcr.io/j-zulick/crawlee-server:2.0.0
 
-# Run the container
-docker run -p 3000:3000 crawlee-api
-
-# Or use Docker Compose
-docker-compose up -d
+curl -s localhost:8794/v1/crawl -H "Authorization: Bearer $(cat crawl.token)" -H 'Content-Type: application/json' -d '{
+  "start_urls": ["https://books.toscrape.com/catalogue/category/books/poetry_23/index.html"],
+  "include_patterns": ["https://books.toscrape.com/catalogue/*_*/index.html"],
+  "exclude_patterns": ["**/category/**"],
+  "selectors": { "price": ".price_color", "availability": ".availability" },
+  "max_pages": 8
+}' | jq '.stats, .records[0]'
 ```
 
-### Container Features
+Add Firecrawl for JavaScript-heavy sites (see [docs/FIRECRAWL.md](docs/FIRECRAWL.md)):
 
-- **Stateless design** - No persistent storage, perfect for scaling
-- **Security** - Runs as non-root user
-- **Health checks** - Built-in monitoring
-- **Resource limits** - Memory and CPU constraints
-- **CORS enabled** - Cross-origin request support
-
-### Environment Variables
-
-- `PORT` - Server port (default: 3000)
-- `NODE_ENV` - Environment (production/development)
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Network Errors**: Check your internet connection and the target site's availability
-2. **Rate Limiting**: The crawler includes delays to be respectful to servers
-3. **Memory Issues**: Reduce `maxRequestsPerCrawl` if you encounter memory problems
-
-### Debug Mode
-
-Enable verbose logging by changing the log level:
-
-```javascript
-logLevel: 'DEBUG', // Instead of 'INFO'
+```bash
+docker run ... -e FIRECRAWL_URL=https://your-firecrawl.example -e FIRECRAWL_API_KEY_FILE=/run/secrets/firecrawl.key ...
+# then, for example:
+#   { "start_urls": ["https://www.groupon.com/travel/luxury"], "render": "auto", "max_pages": 5 }
 ```
 
-## License
+Keep `max_pages` small when you point it at someone else's site.
 
-MIT License - see LICENSE file for details.
+## How it works
 
-## Contributing
+```mermaid
+flowchart LR
+  A[POST /v1/crawl] --> B[Validate + SSRF check]
+  B --> C[Crawlee queue<br/>page / crawl / sitemap / map]
+  C --> D[Plain HTTP fetch<br/>CheerioCrawler]
+  D -->|looks JavaScript-built,<br/>or no listing found| F[Firecrawl /v1/scrape<br/>rendered HTML]
+  D -->|blocked / failed| F
+  C -.->|mode=map| M[Firecrawl /v1/map]
+  D --> E[Extract: JSON-LD → microdata → selectors]
+  F --> E
+  E --> R[Records + per-field provenance<br/>+ fetched_via]
+```
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+Crawlee owns the queue, limits, robots.txt, SSRF checks and extraction. Firecrawl only fetches. More in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Resources
+## Request
 
-- [Crawlee Documentation](https://crawlee.dev/docs)
-- [Cheerio Documentation](https://cheerio.js.org/)
-- [Crawlee GitHub](https://github.com/apify/crawlee)
+| Field | Default | Meaning |
+|---|---|---|
+| `start_urls` | required | 1–10 pages to start from; the crawl stays on these hostnames |
+| `mode` | `crawl` | `page` (start URLs only), `crawl` (follow links, depth ≤ 3), `sitemap` (`/sitemap.xml`), `map` (Firecrawl site map) |
+| `render` | `auto` | `auto` (Firecrawl only when needed), `never`, `always`; needs `FIRECRAWL_URL` |
+| `profile` | `generic` | `generic` or `vehicle` |
+| `include_patterns` / `exclude_patterns` | — | globs; `*` = one path segment, `**` = anything |
+| `selectors` | — | named CSS selectors to return as fields (generic) or to override fields (vehicle) |
+| `max_pages`, `max_depth`, `concurrency` | 50, 2, 3 | capped by the server limits below |
+
+The response has `status`, `stats`, `records`, `failures`, `refused` (with reasons), a `firecrawl` block (pages
+rendered, blocked pages recovered, failures) and `limitations`.
+
+## Status
+
+| Feature | State |
+|---|---|
+| Bounded crawl (page / crawl / sitemap), limits, one crawl at a time with a small queue | **Demonstrated:** tests in `test/service.test.mjs` |
+| Generic records: title, description, text, schema.org product, named CSS fields | **Demonstrated** |
+| Vehicle listings: JSON-LD → microdata → selectors, per-field `extractor`, VIN check digit | **Demonstrated:** offline fixture site, ≥ 98% field accuracy asserted |
+| Firecrawl rendering (`render=auto/always`), blocked-page recovery, `mode=map`, render budget | **Demonstrated** against a fake Firecrawl API in `test/firecrawl.test.mjs` |
+| SSRF guard: private, loopback, link-local, metadata and CGNAT addresses refused, including after redirects and for Firecrawl's final URL | **Demonstrated** |
+| Firecrawl against a live self-hosted instance | **Locally verified:** see [CHANGELOG](CHANGELOG.md) |
+| Playwright browser mode as an alternative to Firecrawl | **Proposed** (v2.1) |
+| Durable jobs that survive restarts; hash-checked page captures | **Proposed** (v2.2, v2.3) |
+
+## Server settings
+
+| Variable | Default | |
+|---|---|---|
+| `CRAWL_TOKEN_FILE` or `CRAWL_TOKEN` | required | bearer token, 24+ characters |
+| `CRAWL_MAX_PAGES` / `CRAWL_MAX_CONCURRENCY` / `CRAWL_MAX_SECONDS` | 300 / 5 / 150 | hard caps per crawl |
+| `CRAWL_IGNORE_ROBOTS` | `false` | `true` turns robots.txt checks off; `/healthz` and every result say so |
+| `CRAWL_PROXY_URL`, `CRAWL_USER_AGENT` | — | outbound proxy, user agent |
+| `FIRECRAWL_URL`, `FIRECRAWL_API_KEY_FILE` | off | enable Firecrawl; the key is never logged or returned |
+| `FIRECRAWL_MAX_RENDERS`, `FIRECRAWL_CONCURRENCY`, `FIRECRAWL_TIMEOUT_MS` | 25, 2, 45000 | Firecrawl budget per crawl |
+
+## Security
+
+- Bind it to localhost or a private network; `/healthz` is the only route without the token.
+- Container: read-only filesystem, no Linux capabilities, memory/CPU/process limits (see `compose.yaml`).
+- Report issues privately: [SECURITY.md](SECURITY.md).
+
+## Integrations
+
+- **HTTP:** anything that can POST JSON.
+- **Evidence Search** (a self-hosted research engine, not yet public): its gateway exposes this service to AI clients
+  as the MCP tools `crawl_site` and `crawl_inventory`.
+
+## Develop
+
+```bash
+npm ci && npm test          # offline: fixture site + fake Firecrawl, no internet needed
+docker build -t crawlee-server .   # the build runs the tests too
+```
+
+## History, credits and AI assistance
+
+First built and deployed in 2025 as a small Express prototype; rebuilt in Nov 2026 as this service (see
+[CHANGELOG.md](CHANGELOG.md)). Built on Crawlee (Apache-2.0), Cheerio (MIT) and zod (MIT): [NOTICES.md](NOTICES.md).
+Who did what, including AI assistance: [docs/CONTRIBUTIONS.md](docs/CONTRIBUTIONS.md).

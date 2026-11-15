@@ -1,0 +1,29 @@
+# Example deployment. Create the token first:  umask 077; openssl rand -hex 32 > crawl.token
+services:
+  crawlee-server:
+    image: ghcr.io/j-zulick/crawlee-server:${CRAWLEE_SERVER_VERSION:-2.0.0}
+    container_name: crawlee-server
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8794:8794"
+    environment:
+      CRAWL_TOKEN_FILE: /run/secrets/crawl.token
+      CRAWL_MAX_PAGES: "300"
+      CRAWL_MAX_CONCURRENCY: "5"
+      CRAWL_MAX_SECONDS: "150"
+      # Firecrawl (optional): rendering for JavaScript-heavy or blocked pages.
+      FIRECRAWL_URL: ${FIRECRAWL_URL:-}
+      FIRECRAWL_API_KEY_FILE: ${FIRECRAWL_API_KEY_FILE:-}
+    volumes:
+      - ./crawl.token:/run/secrets/crawl.token:ro
+      # - ./firecrawl.key:/run/secrets/firecrawl.key:ro
+    read_only: true
+    tmpfs: ["/tmp:size=256m"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
