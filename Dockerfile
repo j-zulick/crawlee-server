@@ -1,5 +1,5 @@
 # crawlee-server: bounded Crawlee crawler behind a token-protected HTTP API.
-FROM node:24-bookworm-slim AS build
+FROM node:26-bookworm-slim AS build
 # Crawlee's autoscaler reads memory via `ps`; slim images lack it.
 RUN apt-get update && apt-get install -y --no-install-recommends procps && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
@@ -10,7 +10,7 @@ COPY test ./test
 # The full test suite runs inside the build (offline fixtures only): an image that fails it is never produced.
 RUN node --test test/*.test.mjs
 
-FROM node:24-bookworm-slim
+FROM node:26-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends procps && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production CRAWL_BIND=0.0.0.0 CRAWL_PORT=8794 CRAWLEE_PERSIST_STORAGE=false CRAWLEE_STORAGE_DIR=/tmp/crawlee
 WORKDIR /app
