@@ -23,7 +23,7 @@ export function inventory(n = 12) {
   });
 }
 
-function page(v) {
+export function page(v) {
   const priceText = v.price === null ? 'Call for price' : '$' + v.price.toLocaleString('en-US');
   const head = `<title>${v.year} ${v.make} ${v.model} | Ridgeline Motors</title>`;
   if (v.style === 'jsonld') {
