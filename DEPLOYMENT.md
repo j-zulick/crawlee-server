@@ -1,21 +1,25 @@
 # Deployment
 
-Production runs on `joe@droplet-secured` (DigitalOcean), managed with Komodo, next to the research gateway and
-Firecrawl. The same steps work on any Docker host.
+crawlee-server runs on any Docker host. These steps use [Komodo](https://komo.do) stacks; plain
+`docker compose` works the same way. Firecrawl is a separate, optional service: set `FIRECRAWL_URL` to use it.
 
 ## Release → deploy
 
 1. Tag a release (`git tag v2.0.0 && git push origin v2.0.0`, or a GitHub release). The `release` workflow publishes
    `ghcr.io/j-zulick/crawlee-server:2.0.0` for amd64 and arm64.
-2. On the server, create the secrets once (never printed):
+2. On the server, create the secrets once (never printed). The container runs as uid 1000:
    ```bash
-   ssh joe@droplet-secured
-   umask 077; openssl rand -hex 32 > ~/research-platform/secrets/crawl.token
-   # firecrawl.key: the Firecrawl API key, mode 600
+   ssh <user>@<host>
+   mkdir -p <stack-dir> && cd <stack-dir>
+   umask 077; openssl rand -hex 32 > crawl.token
+   # optional: firecrawl.key holds the Firecrawl API key (mode 600)
+   sudo chown 1000:1000 crawl.token        # skip if your user is uid 1000
    ```
-3. Komodo → Stacks → `crawlee-server` → compose from [`compose.yaml`](compose.yaml) with the image tag, secrets mounted
-   read-only and `FIRECRAWL_URL` set → **Deploy**. Or `docker compose up -d` in the stack folder.
-4. Check: `curl -s http://127.0.0.1:8794/healthz` → `{"ok":true,"version":"2.0.0","firecrawl":true,…}`.
+3. Komodo → Stacks → New stack `crawlee-server` → compose from [`compose.yaml`](compose.yaml), image
+   `ghcr.io/j-zulick/crawlee-server:<version>`, secrets mounted read-only, and `FIRECRAWL_URL` set if you use
+   Firecrawl → **Deploy**. Without Komodo: `docker compose up -d` in the stack folder.
+4. Check: `curl -s http://127.0.0.1:8794/healthz` → `{"ok":true,"version":"2.0.0",…}`
+   (`"firecrawl":true` when Firecrawl is configured).
 
 ## Rollback
 
@@ -24,5 +28,6 @@ a tag change.
 
 ## Notes
 
-- Bind to `127.0.0.1` (or a private Docker network); callers on the same host use the token.
+- Bind to `127.0.0.1` (or a private Docker network). Other services on the same host or network call it with the token.
+- One deployment can serve several projects. Give each caller the token through its own secret store.
 - Set `CRAWL_IGNORE_ROBOTS=true` only on deployments where you have decided to; results then say so.
