@@ -1,4 +1,5 @@
 import test from 'node:test';
+import http from 'node:http';
 import assert from 'node:assert/strict';
 import { load } from 'cheerio';
 import { startFixture, makeVin } from './fixture-site.mjs';
@@ -92,4 +93,24 @@ test('HTTP server: auth, validation, busy and crawl', async t => {
   assert.equal(refused.status, 400); assert.equal((await refused.json()).reason, 'private_address');
   const ok = await post({ start_urls: [base + '/inventory'], profile: 'vehicle', include_patterns: [base + "/inventory/*"] });
   assert.equal(ok.status, 200); assert.equal((await ok.json()).stats.records, 3);
+});
+
+test('ssrf guard refuses a start URL that redirects to a loopback host', async t => {
+  let trapHits = 0;
+  const trap = http.createServer((req, res) => { trapHits++; res.writeHead(200, { 'content-type': 'text/html' }); res.end('<title>internal</title><h1>secret</h1>'); });
+  await new Promise(r => trap.listen(0, '127.0.0.1', r));
+  const trapPort = trap.address().port;
+  const redirector = http.createServer((req, res) => {
+    if (req.url === '/robots.txt') { res.writeHead(404); return res.end(); }
+    res.writeHead(302, { location: `http://localhost:${trapPort}/admin` }); res.end();
+  });
+  await new Promise(r => redirector.listen(0, '127.0.0.1', r));
+  t.after(() => { redirector.close(); trap.close(); });
+  const start = `http://127.0.0.1:${redirector.address().port}/`;
+  const out = await runCrawl({ start_urls: [start], mode: 'page', max_pages: 5 }, policy);
+  assert.equal(out.stats.records, 0, JSON.stringify(out));
+  assert.deepEqual(out.records, []);
+  const refusal = [...(out.refused || []), ...(out.failures || [])].find(x => /private_host|port_not_allowed|private_address/.test(x.reason || x.error || ''));
+  t.diagnostic("trap hits: " + trapHits);
+  assert.ok(refusal, 'expected a refusal: ' + JSON.stringify({ refused: out.refused, failures: out.failures }));
 });
