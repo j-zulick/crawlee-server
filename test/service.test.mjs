@@ -66,11 +66,41 @@ test('vehicle crawl of fixture: all markup styles, sold, call-for-price, duplica
   assert.equal(out.records.find(r => r.listing_url.endsWith('/inventory/3')).extractor.vin, 'selector');
 });
 
+test('crawl stops at max_pages and reports the page limit', async t => {
+  const { server, base } = await startFixture({ duplicate: false });
+  t.after(() => server.close());
+  const fetched = [];
+  server.on('request', req => { if (req.url !== '/robots.txt') fetched.push(req.url); });
+  const out = await runCrawl({ start_urls: [base + '/inventory'], max_pages: 3, concurrency: 1 }, policy);
+  assert.equal(fetched.length, 3);
+  assert.equal(out.stats.pages_fetched, 3);
+  assert.equal(out.records.length, 3);
+  assert.deepEqual(out.failures, []);
+  assert.equal(out.stats.stopped, 'max_pages');
+});
+
+test('crawl stops at the time budget and reports it instead of the page limit', { timeout: 10_000 }, async t => {
+  const { server, base } = await startFixture({ duplicate: false, delayMs: 250 });
+  t.after(() => server.close());
+  const fetched = [];
+  server.on('request', req => { if (req.url !== '/robots.txt') fetched.push(req.url); });
+  const shortPolicy = crawlPolicy({ CRAWL_ALLOW_PRIVATE_HOSTS: '127.0.0.1', CRAWL_MAX_SECONDS: '0.1' });
+  const out = await runCrawl({ start_urls: [base + '/inventory'], max_pages: 3, concurrency: 1 }, shortPolicy);
+  // Stopping is graceful: a page already in flight may finish, but queued pages must not start.
+  assert.ok(fetched.length <= 1, JSON.stringify(fetched));
+  assert.ok(out.stats.pages_fetched <= 1, JSON.stringify(out.stats));
+  assert.equal(out.records.length, out.stats.pages_fetched);
+  assert.deepEqual(out.failures, []);
+  assert.ok(out.stats.seconds >= shortPolicy.maxSeconds);
+  assert.equal(out.stats.stopped, 'time_budget');
+});
+
 test('sitemap mode reaches every listing without following links', async t => {
   const { server, inv, base } = await startFixture({ duplicate: false });
   t.after(() => server.close());
   const out = await runCrawl({ start_urls: [base + '/'], mode: 'sitemap', profile: 'vehicle', max_pages: 50 }, policy);
   assert.equal(out.stats.records, inv.length);
+  assert.equal(out.stats.stopped, null);
 });
 
 test('generic profile returns title, text and product fields', () => {
