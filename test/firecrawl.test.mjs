@@ -135,6 +135,42 @@ test('Firecrawl outage: structured failures, no crash, no key leak', async t => 
   assert.ok(!JSON.stringify(out).includes(KEY));
 });
 
+test('Firecrawl timeout: crawl degrades, records the failure and a limitation', async t => {
+  const site = await startSite(3);
+  t.after(() => site.server.close());
+  const firecrawlFetcher = async () => { throw new DOMException('The operation timed out.', 'TimeoutError'); };
+  const out = await runCrawl({ start_urls: [site.base + '/spa'], profile: 'vehicle', include_patterns: [site.base + '/spa/item/*'] }, policyWith('http://127.0.0.1:9'), { firecrawlFetcher });
+  assert.equal(out.stats.records, 0);
+  assert.equal(out.firecrawl.pages_rendered, 0);
+  assert.equal(out.firecrawl.failures.length, 3);
+  assert.ok(out.firecrawl.failures.every(f => f.outcome === 'timeout'));
+  assert.ok(out.limitations.some(l => /Firecrawl failed for 3 page/.test(l) && l.includes('timeout')), JSON.stringify(out.limitations));
+  assert.ok(!JSON.stringify(out).includes(KEY));
+});
+
+test('Firecrawl error responses: 500 and 429 are recorded as limitations, not crashes', async t => {
+  const site = await startSite(2);
+  t.after(() => site.server.close());
+  for (const [status, outcome] of [[500, 'http_500'], [429, 'rate_limited']]) {
+    const fc = http.createServer((req, res) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end('{"success":false}'); });
+    const base = await listen(fc);
+    try {
+      const out = await runCrawl({ start_urls: [site.base + '/spa'], profile: 'vehicle', include_patterns: [site.base + '/spa/item/*'] }, policyWith(base));
+      assert.equal(out.stats.records, 0);
+      assert.equal(out.firecrawl.failures.length, 2);
+      assert.ok(out.firecrawl.failures.every(f => f.outcome === outcome));
+      assert.ok(out.limitations.some(l => l.includes('Firecrawl failed') && l.includes(outcome)), JSON.stringify(out.limitations));
+    } finally { fc.close(); }
+  }
+});
+
+test('a healthy Firecrawl adds no failure limitation', async t => {
+  const site = await startSite(2); const fc = await startFirecrawl(site);
+  t.after(() => { site.server.close(); fc.server.close(); });
+  const out = await runCrawl({ start_urls: [site.base + '/spa'], profile: 'vehicle', include_patterns: [site.base + '/spa/item/*'] }, policyWith(fc.base));
+  assert.ok(!out.limitations.some(l => l.includes('Firecrawl failed')));
+});
+
 test('a rendered page that ends up on a private or off-site address is refused', async t => {
   const site = await startSite(2); const fc = await startFirecrawl(site, { finalUrl: 'http://169.254.169.254/latest/' });
   t.after(() => { site.server.close(); fc.server.close(); });

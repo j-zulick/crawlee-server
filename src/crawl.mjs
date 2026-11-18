@@ -229,6 +229,7 @@ export async function runCrawl(reqBody, policy = crawlPolicy(process.env), { fet
         ? `Pages built by JavaScript or blocked for plain HTTP are fetched through Firecrawl (render=${req.render}, at most ${policy.firecrawl.maxRendersPerCrawl} per crawl); each record's fetched_via says how it was fetched.`
         : 'Static HTML only (Firecrawl not configured): data rendered by JavaScript is not seen.',
       'Fixed extraction (JSON-LD, microdata, then selectors). Records listing missing_required fields are candidates for LLM fallback.',
+      ...(fcStats.failures.length ? [`Firecrawl failed for ${fcStats.failures.length} page(s) (${[...new Set(fcStats.failures.map(f => f.outcome))].join(', ')}); those pages were not rendered, so JavaScript-built data on them is missing.`] : []),
       policy.respectRobots ? 'robots.txt is respected; disallowed pages are listed under refused (skipped_robotsTxt).' : 'robots.txt checking is OFF.',
     ],
   };
