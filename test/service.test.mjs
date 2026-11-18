@@ -103,6 +103,43 @@ test('sitemap mode reaches every listing without following links', async t => {
   assert.equal(out.stats.stopped, null);
 });
 
+test('sitemap mode follows a sitemap index to child sitemaps without following page links', async t => {
+  const children = new Map([
+    ['/sitemap-a.xml', ['/pages/1', '/pages/2']],
+    ['/sitemap-b.xml', ['/pages/3']],
+  ]);
+  const pages = [...children.values()].flat();
+  const fetched = [];
+  const server = http.createServer((req, res) => {
+    if (req.url === '/robots.txt') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('User-agent: *\nAllow: /\n'); }
+    fetched.push(req.url);
+    if (req.url === '/sitemap.xml' || children.has(req.url)) {
+      const index = req.url === '/sitemap.xml';
+      const tag = index ? 'sitemapindex' : 'urlset';
+      const entry = index ? 'sitemap' : 'url';
+      const paths = index ? [...children.keys()] : children.get(req.url);
+      res.writeHead(200, { 'content-type': 'application/xml' });
+      return res.end(`<?xml version="1.0"?><${tag} xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${paths.map(p => `<${entry}><loc>http://${req.headers.host}${p}</loc></${entry}>`).join('')}</${tag}>`);
+    }
+    if (pages.includes(req.url)) {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end(`<html><head><title>Page ${req.url}</title></head><body><a href="/not-in-sitemap">Other page</a></body></html>`);
+    }
+    res.writeHead(404); res.end();
+  });
+  t.after(() => server.close());
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const out = await runCrawl({ start_urls: [base + '/'], mode: 'sitemap', max_pages: 10 }, policy);
+  assert.equal(out.status, 'ok');
+  assert.deepEqual(out.records.map(r => r.url).sort(), pages.map(p => base + p).sort());
+  assert.deepEqual(fetched.sort(), ['/sitemap.xml', ...children.keys(), ...pages].sort());
+  assert.equal(out.stats.pages_fetched, pages.length);
+  assert.equal(out.stats.stopped, null);
+  assert.deepEqual(out.failures, []);
+  assert.deepEqual(out.refused, []);
+});
+
 test('generic profile returns title, text and product fields', () => {
   const $ = load('<html><head><title>T</title><script type="application/ld+json">{"@type":"Product","name":"Widget","sku":"W1","offers":{"price":"19.99","priceCurrency":"GBP","availability":"https://schema.org/InStock"}}</script></head><body><main><p>Hello   world</p></main></body></html>');
   const r = extractGeneric($, 'https://shop.test/w');
