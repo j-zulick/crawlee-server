@@ -1,6 +1,7 @@
 import test from 'node:test';
 import http from 'node:http';
 import assert from 'node:assert/strict';
+import { setTimeout as delay } from 'node:timers/promises';
 import { load } from 'cheerio';
 import { startFixture, makeVin } from './fixture-site.mjs';
 import { runCrawl, crawlPolicy, validateRequest, BadRequest } from '../src/crawl.mjs';
@@ -79,7 +80,77 @@ test('generic profile returns title, text and product fields', () => {
   assert.equal(r.text, 'Hello world');
 });
 
-test('HTTP server: auth, validation, busy and crawl', async t => {
+test('HTTP server: POST /v1/crawl rejects invalid requests before crawling', async t => {
+  const token = 'x'.repeat(32);
+  const crawl = t.mock.fn(async () => ({ status: 'ok' }));
+  const srv = createServer({ env: { CRAWL_TOKEN: token }, crawl });
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  t.after(() => srv.close());
+  const url = `http://127.0.0.1:${srv.address().port}/v1/crawl`;
+  const body = JSON.stringify({ start_urls: ['https://example.test/'] });
+  const cases = [
+    { name: 'missing bearer token', auth: null, status: 401, error: 'unauthorized' },
+    { name: 'wrong bearer token', auth: 'Bearer wrong', status: 401, error: 'unauthorized' },
+    { name: 'body over 64 KB', body: JSON.stringify({ padding: 'x'.repeat(64 * 1024) }), status: 413, error: 'body_too_large' },
+    { name: 'non-JSON content type', type: 'text/plain', status: 415, error: 'json_required' },
+    { name: 'invalid JSON', body: '{"start_urls":', status: 400, error: 'invalid_json' },
+  ];
+  for (const c of cases) {
+    await t.test(c.name, async () => {
+      const headers = { 'content-type': c.type ?? 'application/json' };
+      if (c.auth !== null) headers.authorization = c.auth ?? 'Bearer ' + token;
+      const res = await fetch(url, { method: 'POST', headers, body: c.body ?? body });
+      assert.equal(res.status, c.status);
+      assert.deepEqual(await res.json(), { error: c.error });
+      assert.equal(crawl.mock.callCount(), 0);
+    });
+  }
+});
+
+test('HTTP server: POST /v1/crawl returns 429 when the queue is full', { timeout: 10_000 }, async t => {
+  let release;
+  const gate = new Promise(r => { release = r; });
+  const crawl = t.mock.fn(async () => { await gate; return { status: 'ok' }; });
+  const srv = createServer({ env: { CRAWL_TOKEN: 'x'.repeat(32) }, crawl });
+  const pending = [];
+  t.after(async () => {
+    release();
+    await Promise.allSettled(pending);
+    srv.closeAllConnections();
+    await new Promise(r => srv.close(r));
+  });
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${srv.address().port}`;
+  const post = () => fetch(url + '/v1/crawl', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + 'x'.repeat(32) },
+    body: JSON.stringify({ start_urls: ['https://example.test/'] }),
+    signal: AbortSignal.timeout(5_000),
+  });
+  // Hold one crawl open and fill the default two queued slots before sending another.
+  for (let i = 0; i < 3; i++) pending.push(post());
+  const deadline = Date.now() + 5_000;
+  while (true) {
+    const health = await fetch(url + '/healthz', { signal: AbortSignal.timeout(5_000) });
+    const state = await health.json();
+    if (state.running === 1 && state.queued === 2) break;
+    assert.ok(Date.now() < deadline, 'one crawl should be running with two requests queued');
+    await delay(10);
+  }
+  assert.equal(crawl.mock.callCount(), 1);
+  const busy = await post();
+  assert.equal(busy.status, 429);
+  assert.deepEqual(await busy.json(), { error: 'busy', retry_after_s: 30 });
+  assert.equal(crawl.mock.callCount(), 1);
+  release();
+  for (const res of await Promise.all(pending)) {
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { status: 'ok' });
+  }
+  assert.equal(crawl.mock.callCount(), 3);
+});
+
+test('HTTP server: auth, validation and crawl', async t => {
   const { server: fx, base } = await startFixture({ n: 3, duplicate: false });
   const env = { CRAWL_TOKEN: 'x'.repeat(32), CRAWL_ALLOW_PRIVATE_HOSTS: '127.0.0.1' };
   const srv = createServer({ env }); await new Promise(r => srv.listen(0, '127.0.0.1', r));
