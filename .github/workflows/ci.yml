@@ -22,6 +22,22 @@ jobs:
       - name: Tests (offline fixture site and fake Firecrawl; no internet)
         run: node --test --test-reporter=spec test/*.test.mjs
 
+  # One stable check name for branch protection. The matrix above reports
+  # "test (22)", "test (24)", "test (26)"; the protect-main ruleset requires
+  # "tests". This job passes only if every matrix leg passed, and it runs
+  # even when one fails or is cancelled, so the required check always reports.
+  tests:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All Node versions passed
+        env:
+          RESULT: ${{ needs.test.result }}
+        run: |
+          echo "test matrix result: $RESULT"
+          test "$RESULT" = "success"
+
   docker:
     runs-on: ubuntu-latest
     steps:
