@@ -49,11 +49,14 @@ ${v.vin ? `<div>VIN: ${v.vin}</div>` : ''}<div class="exterior-color">${v.exteri
 <div class="status">${v.status === 'sold' ? 'Sold' : 'Available'}</div><img src="/img/${v.id}-1.jpg"></div></body></html>`;
 }
 
-export function startFixture({ n = 12, perPage = 5, duplicate = true } = {}) {
+export function startFixture({ n = 12, perPage = 5, duplicate = true, delayMs = 0 } = {}) {
   const inv = inventory(n);
   const server = http.createServer((req, res) => {
     const u = new URL(req.url, 'http://x');
-    const html = (code, body, type = 'text/html') => { res.writeHead(code, { 'content-type': type }); res.end(body); };
+    const html = (code, body, type = 'text/html') => {
+      const send = () => { res.writeHead(code, { 'content-type': type }); res.end(body); };
+      if (delayMs && type === 'text/html') setTimeout(send, delayMs); else send();
+    };
     if (u.pathname === '/robots.txt') return html(200, 'User-agent: *\nDisallow: /private/\n', 'text/plain');
     if (u.pathname === '/sitemap.xml') return html(200, `<?xml version="1.0"?><urlset>${inv.map(v => `<url><loc>http://${req.headers.host}/inventory/${v.id}</loc></url>`).join('')}</urlset>`, 'application/xml');
     if (u.pathname === '/private/secret') return html(200, '<h1>should never be fetched</h1>');
