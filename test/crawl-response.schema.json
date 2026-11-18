@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "POST /v1/crawl response",
+  "type": "object",
+  "required": ["status", "crawl_id", "profile", "mode", "firecrawl", "stats", "records", "failures", "refused", "limitations"],
+  "properties": {
+    "status": { "enum": ["ok", "partial", "failed", "no_records"] },
+    "crawl_id": { "type": "string", "minLength": 1 },
+    "profile": { "enum": ["generic", "vehicle"] },
+    "mode": { "enum": ["page", "crawl", "sitemap", "map"] },
+    "firecrawl": {
+      "type": "object",
+      "required": ["enabled", "render", "pages_rendered", "http_failures_recovered", "map_urls_found", "render_budget_skips", "failures"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "render": { "enum": ["auto", "never", "always"] },
+        "pages_rendered": { "type": "integer", "minimum": 0 },
+        "http_failures_recovered": { "type": "integer", "minimum": 0 },
+        "map_urls_found": { "type": "integer", "minimum": 0 },
+        "render_budget_skips": { "type": "integer", "minimum": 0 },
+        "failures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["url", "outcome"],
+            "properties": { "url": { "type": "string" }, "outcome": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "required": ["pages_fetched", "skipped", "links_not_followed", "records", "duplicates", "failures", "records_missing_required", "seconds", "stopped"],
+      "properties": {
+        "pages_fetched": { "type": "integer", "minimum": 0 },
+        "skipped": { "type": "integer", "minimum": 0 },
+        "links_not_followed": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+        "records": { "type": "integer", "minimum": 0 },
+        "duplicates": { "type": "integer", "minimum": 0 },
+        "failures": { "type": "integer", "minimum": 0 },
+        "records_missing_required": { "type": "integer", "minimum": 0 },
+        "seconds": { "type": "number", "minimum": 0 },
+        "stopped": { "enum": [null, "max_pages", "time_budget"] }
+      }
+    },
+    "records": { "type": "array", "items": { "type": "object" } },
+    "failures": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "required": ["url", "error"],
+        "properties": { "url": { "type": "string" }, "error": { "type": "string" } }
+      }
+    },
+    "refused": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "required": ["url", "reason"],
+        "properties": { "url": { "type": "string" }, "reason": { "type": "string" } }
+      }
+    },
+    "limitations": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+  }
+}
