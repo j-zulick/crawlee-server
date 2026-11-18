@@ -2,6 +2,7 @@
 
 [![ci](https://github.com/j-zulick/crawlee-server/actions/workflows/ci.yml/badge.svg)](https://github.com/j-zulick/crawlee-server/actions/workflows/ci.yml)
 [![codeql](https://github.com/j-zulick/crawlee-server/actions/workflows/codeql.yml/badge.svg)](https://github.com/j-zulick/crawlee-server/actions/workflows/codeql.yml)
+[![coverage: ≥95% lines](https://img.shields.io/badge/coverage-%E2%89%A595%25%20lines-brightgreen.svg)](test/README.md#coverage)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **TL;DR:** a self-hosted crawling API. Give it a site and get back structured records instead of raw HTML.
@@ -114,6 +115,7 @@ rendered, blocked pages recovered, failures) and `limitations`.
 
 ```bash
 npm ci && npm test          # offline: fixture site + fake Firecrawl, no internet needed (Node 22, 24 or 26)
+npm run coverage            # same tests plus a coverage report; fails under the thresholds (see test/README.md)
 docker build -t crawlee-server .   # the build runs the tests too
 ```
 
