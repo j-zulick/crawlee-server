@@ -1,0 +1,34 @@
+services:
+  crawlee-server:
+    image: ghcr.io/j-zulick/crawlee-server:2.2.0   # pin an exact release tag
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8794:8794"
+      - "172.17.0.1:8794:8794"   # docker bridge, for clients in other containers; remove if not needed
+    environment:
+      CRAWL_TOKEN_FILE: /run/secrets/crawl.token
+      CRAWL_MAX_PAGES: "300"
+      CRAWL_MAX_CONCURRENCY: "5"
+      CRAWL_MAX_SECONDS: "150"
+      FIRECRAWL_URL: https://<your-firecrawl-host>   # optional; remove this and the key line to disable rendering
+      FIRECRAWL_API_KEY_FILE: /run/secrets/firecrawl.key
+      # CRAWL_IGNORE_ROBOTS: "true"   # default respects robots.txt; only set this for your own deployment
+      CRAWL_CAPTURE_DEFAULT: "false"
+    volumes:
+      - /path/on/host/crawl.token:/run/secrets/crawl.token:ro
+      - /path/on/host/firecrawl.key:/run/secrets/firecrawl.key:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"

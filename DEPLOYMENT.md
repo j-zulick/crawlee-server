@@ -21,6 +21,44 @@ crawlee-server runs on any Docker host. These steps use [Komodo](https://komo.do
 4. Check: `curl -s http://127.0.0.1:8794/healthz` → `{"ok":true,"version":"2.2.0",…}`
    (`"firecrawl":true` when Firecrawl is configured).
 
+## Deploying with Komodo
+
+Stack definition: [`deploy/komodo/compose.yaml`](deploy/komodo/compose.yaml). Host paths and the Firecrawl URL in it are
+placeholders.
+
+1. **Secrets on the host.** Create the token file and, if you use Firecrawl, the key file. Both must be owned by
+   uid 1000 with mode 600 or stricter:
+   ```bash
+   umask 077; openssl rand -hex 32 > /path/on/host/crawl.token
+   # put the Firecrawl API key in /path/on/host/firecrawl.key
+   sudo chown 1000:1000 /path/on/host/crawl.token /path/on/host/firecrawl.key
+   chmod 600 /path/on/host/crawl.token /path/on/host/firecrawl.key
+   ```
+2. **Create the stack.** Komodo → Stacks → New stack `crawlee-server`, with the compose defined in the UI: paste the
+   contents of `deploy/komodo/compose.yaml`. Replace the host paths, set `FIRECRAWL_URL` (or remove it and the
+   `FIRECRAWL_API_KEY_FILE` line), and remove the `172.17.0.1` port line if no container needs to reach it.
+3. **Deploy**, then verify:
+   ```bash
+   TOKEN=$(cat /path/on/host/crawl.token)
+   # version matches the tag you deployed
+   curl -s http://127.0.0.1:8794/healthz
+   # no token: 401
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8794/v1/crawl \
+     -H 'Content-Type: application/json' -d '{"start_urls":["https://books.toscrape.com/"]}'
+   # crawl returns records
+   curl -s http://127.0.0.1:8794/v1/crawl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"start_urls":["https://books.toscrape.com/"],"mode":"page"}' | jq '.stats, .records[0]'
+   # link-local metadata address is refused: HTTP 400, error url_refused
+   curl -s http://127.0.0.1:8794/v1/crawl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"start_urls":["http://169.254.169.254/"],"mode":"page"}'
+   ```
+4. **Upgrade.** Change the image tag in the stack to the new release, Deploy, then check that `/healthz` reports the new
+   version. Pin an exact tag, not `latest`.
+5. **Roll back.** Set the previous tag and Deploy again; check `/healthz`.
+6. **Captures.** If you enable captures (`CRAWL_CAPTURE_DEFAULT: "true"` or `capture: true` requests), the stack needs a
+   writable volume for `CRAWL_CAPTURE_DIR` (see [Page captures](#page-captures-optional)). The root filesystem is
+   read-only, so without it captures are not stored.
+
 ## Page captures (optional)
 
 `capture: true` requests write raw pages to `CRAWL_CAPTURE_DIR` (see [docs/CAPTURE.md](docs/CAPTURE.md)). The root

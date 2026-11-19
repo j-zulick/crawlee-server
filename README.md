@@ -96,6 +96,8 @@ Reads do not use the one-crawl-at-a-time slot. Details: [docs/CAPTURE.md](docs/C
 
 ## Status
 
+The reference deployment runs as a Komodo stack with a pinned image tag (see [DEPLOYMENT.md](DEPLOYMENT.md)).
+
 | Feature | State |
 |---|---|
 | Bounded crawl (page / crawl / sitemap), limits, one crawl at a time with a small queue | **Demonstrated:** tests in `test/service.test.mjs` |

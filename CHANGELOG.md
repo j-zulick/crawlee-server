@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Docs: Komodo stack example (deploy/komodo/compose.yaml) and deployment guide.
+
 ## 2.2.0 — Nov 2026
 
 ### Added
