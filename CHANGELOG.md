@@ -8,6 +8,8 @@
   Records gain `capture_id`, `sha256` and `fetched_at`. Off by default. See [docs/CAPTURE.md](docs/CAPTURE.md).
 - Settings `CRAWL_CAPTURE_DIR`, `CRAWL_CAPTURE_DEFAULT`, `CRAWL_CAPTURE_MAX_BYTES`, `CRAWL_CAPTURE_MAX_TOTAL_BYTES`,
   `CRAWL_CAPTURE_TTL_DAYS`; expired captures are swept at startup and hourly.
+- Client identity: `client_id` is an HMAC-SHA-256 of the bearer token; `resolveClient(request)` and a constant-time,
+  fail-closed `ownsCapture` live in `src/client.mjs`. Rotating the token orphans older captures (see docs/CAPTURE.md).
 - `compose.yaml` mounts a `crawlee-captures` volume; the root filesystem stays read-only.
 
 

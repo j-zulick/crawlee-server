@@ -7,7 +7,7 @@
 //
 // Off unless a request sets `capture: true` (or CRAWL_CAPTURE_DEFAULT=true). Captured pages are third-party content:
 // they stay in this directory and are never logged, returned in responses or put in the repo.
-import { randomBytes, createHash, createHmac } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { open, rename, rm, readdir, readFile, stat, access, constants } from 'node:fs/promises';
 import { Transform } from 'node:stream';
 import { join } from 'node:path';
@@ -28,9 +28,7 @@ export function capturePolicy(env = {}) {
   });
 }
 
-// Stable id for the caller, derived from the bearer token (the token itself is never stored). Per-client tokens (2.4.0)
-// can replace the input without changing the capture format.
-export const clientIdFromToken = token => 'tok_' + createHmac('sha256', 'crawlee-server client-id v1').update(String(token)).digest('hex').slice(0, 16);
+export { clientIdFromToken } from './client.mjs';   // client identity lives in client.mjs
 
 export const sha256Hex = bytes => createHash('sha256').update(bytes).digest('hex');
 // 192 random bits, hex: unguessable, and safe to use as a file name.

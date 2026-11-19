@@ -26,8 +26,15 @@ Two files per capture in `CRAWL_CAPTURE_DIR`, both mode 0600:
   `content_type`, `size_bytes`, `sha256`, `fetch_method` (the record's `fetched_via`: `http` or `firecrawl`),
   `rendered`, `recovered` (plain HTTP failed and Firecrawl fetched it), `client_id`, `crawl_id`.
 
-`client_id` is `tok_` plus 16 hex characters of an HMAC-SHA-256 of the bearer token. The token is never stored. When
-per-client tokens arrive (2.4.0) they replace the input; the capture format stays the same.
+`client_id` is `tok_` plus 16 hex characters of an HMAC-SHA-256 of the bearer token under a fixed server label. The
+token is never stored or logged. `client_id` is not returned in crawl responses or `/healthz`. Ownership is checked
+with `ownsCapture` (`src/client.mjs`): constant-time, and false for any empty or malformed id. When per-client tokens
+arrive (2.4.0) they replace the body of `resolveClient(request)`; the capture format stays the same.
+
+**Token rotation:** a new token gives a new `client_id`, so captures made under the old token are no longer owned by
+any caller. They stay on disk until the TTL sweep removes them. There is deliberately no override setting to carry
+an id across rotation: it would let a misconfiguration expose one client's captures to another. If continuity matters,
+revisit it with the per-client tokens in 2.4.0.
 
 Writes are atomic: each file is written under a `.tmp-` name, flushed, then renamed, `.json` last. A capture exists
 only when its `.json` exists, so a crash never leaves a half-written capture that looks complete.

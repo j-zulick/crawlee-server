@@ -2,21 +2,19 @@
 // research gateway is the only intended caller. Token: CRAWL_TOKEN_FILE (owner-only file).
 import http from 'node:http';
 import { readFileSync } from 'node:fs';
-import { timingSafeEqual, createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { runCrawl, crawlPolicy, BadRequest } from './crawl.mjs';
 import { UrlRefused } from './ssrf.mjs';
-import { storeFor, clientIdFromToken } from './capture.mjs';
+import { storeFor } from './capture.mjs';
+import { makeResolveClient } from './client.mjs';
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
-const digest = s => createHash('sha256').update(String(s)).digest();
 
 export function createServer({ env = process.env, crawl = runCrawl } = {}) {
   const policy = crawlPolicy(env);
   const token = env.CRAWL_TOKEN_FILE ? readFileSync(env.CRAWL_TOKEN_FILE, 'utf8').trim() : env.CRAWL_TOKEN || '';
   if (token.length < 24) throw Error('CRAWL_TOKEN_FILE must hold a token of 24+ characters');
-  const want = digest('Bearer ' + token);
-  const clientId = clientIdFromToken(token);
+  const resolveClient = makeResolveClient(token);
   const maxQueued = Number(env.CRAWL_MAX_QUEUED || 2);
   let running = 0; const waiters = [];
   const acquire = () => (running < 1 ? (running++, Promise.resolve()) : waiters.length >= maxQueued ? Promise.reject(Object.assign(Error('busy'), { busy: true })) : new Promise(r => waiters.push(r)));
@@ -28,7 +26,8 @@ export function createServer({ env = process.env, crawl = runCrawl } = {}) {
   const server = http.createServer(async (req, res) => {
     try {
       if (req.method === 'GET' && req.url === '/healthz') return send(res, 200, { ok: true, version: VERSION, firecrawl: !!policy.firecrawl, robots: policy.respectRobots ? 'respected' : 'ignored', running, queued: waiters.length, served });
-      if (!timingSafeEqual(digest(req.headers.authorization || ''), want)) return send(res, 401, { error: 'unauthorized' });
+      const clientId = resolveClient(req);
+      if (!clientId) return send(res, 401, { error: 'unauthorized' });
       if (req.method !== 'POST' || req.url !== '/v1/crawl') return send(res, 404, { error: 'not_found' });
       if (!/^application\/json/.test(req.headers['content-type'] || '')) return send(res, 415, { error: 'json_required' });
       let size = 0; const chunks = [];
