@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (2.2.0)
+## 2.2.0 — Nov 2026
 
 ### Added
 - Page captures: `capture: true` stores the raw page body exactly as received (or Firecrawl's rendered HTML) with its

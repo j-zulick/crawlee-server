@@ -5,8 +5,8 @@ crawlee-server runs on any Docker host. These steps use [Komodo](https://komo.do
 
 ## Release → deploy
 
-1. Tag a release (`git tag v2.1.0 && git push origin v2.0.0`, or a GitHub release). The `release` workflow publishes
-   `ghcr.io/j-zulick/crawlee-server:2.1.0` for amd64 and arm64.
+1. Tag a release (`git tag v2.2.0 && git push origin v2.2.0`, or a GitHub release). The `release` workflow publishes
+   `ghcr.io/j-zulick/crawlee-server:2.2.0` for amd64 and arm64.
 2. On the server, create the secrets once (never printed). The container runs as uid 1000:
    ```bash
    ssh <user>@<host>
@@ -18,7 +18,7 @@ crawlee-server runs on any Docker host. These steps use [Komodo](https://komo.do
 3. Komodo → Stacks → New stack `crawlee-server` → compose from [`compose.yaml`](compose.yaml), image
    `ghcr.io/j-zulick/crawlee-server:<version>`, secrets mounted read-only, and `FIRECRAWL_URL` set if you use
    Firecrawl → **Deploy**. Without Komodo: `docker compose up -d` in the stack folder.
-4. Check: `curl -s http://127.0.0.1:8794/healthz` → `{"ok":true,"version":"2.1.0",…}`
+4. Check: `curl -s http://127.0.0.1:8794/healthz` → `{"ok":true,"version":"2.2.0",…}`
    (`"firecrawl":true` when Firecrawl is configured).
 
 ## Page captures (optional)

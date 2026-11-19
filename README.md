@@ -21,7 +21,7 @@ the page was fetched. One container, one token, safe against requests to private
 ```bash
 docker run -d --name crawlee-server -p 127.0.0.1:8794:8794 \
   -e CRAWL_TOKEN="$(openssl rand -hex 32 | tee crawl.token)" \
-  ghcr.io/j-zulick/crawlee-server:2.1.0
+  ghcr.io/j-zulick/crawlee-server:2.2.0
 
 curl -s localhost:8794/v1/crawl -H "Authorization: Bearer $(cat crawl.token)" -H 'Content-Type: application/json' -d '{
   "start_urls": ["https://books.toscrape.com/catalogue/category/books/poetry_23/index.html"],
