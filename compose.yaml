@@ -20,6 +20,7 @@ services:
       CRAWL_CAPTURE_MAX_BYTES: "5000000"
       CRAWL_CAPTURE_MAX_TOTAL_BYTES: "1073741824"
       CRAWL_CAPTURE_TTL_DAYS: "30"
+      CRAWL_CAPTURE_READS_PER_MIN: "60"
     volumes:
       - ./crawl.token:/run/secrets/crawl.token:ro
       # - ./firecrawl.key:/run/secrets/firecrawl.key:ro

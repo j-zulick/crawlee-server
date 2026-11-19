@@ -76,6 +76,24 @@ Crawlee owns the queue, limits, robots.txt, SSRF checks and extraction. Firecraw
 The response has `status`, `stats`, `records`, `failures`, `refused` (with reasons), a `firecrawl` block (pages
 rendered, blocked pages recovered, failures) and `limitations`.
 
+## Reading captures
+
+`GET /v1/captures/:id` returns the stored raw page with its original `Content-Type` and the headers
+`X-Capture-SHA256`, `X-Capture-Fetched-At`, `X-Capture-URL` and `X-Capture-Crawl-Id`. It also sets
+`Content-Security-Policy: sandbox`, `X-Content-Type-Options: nosniff` and `Content-Disposition: attachment`.
+`GET /v1/captures/:id/meta` returns the metadata as JSON only (the cheaper call for a hash check). Both need the
+bearer token and only work for the client whose token made the crawl.
+
+| Status | Meaning |
+|---|---|
+| 401 | missing or wrong token |
+| 400 `invalid_capture_id` | the id is not 48 lowercase hex characters |
+| 404 `capture_not_found` | unknown, expired or owned by another client (one identical answer) |
+| 429 `rate_limited` | more than `CRAWL_CAPTURE_READS_PER_MIN` reads (default 60) per client per minute |
+| 500 `capture_corrupt` | the stored bytes no longer match their SHA-256; no body is returned |
+
+Reads do not use the one-crawl-at-a-time slot. Details: [docs/CAPTURE.md](docs/CAPTURE.md).
+
 ## Status
 
 | Feature | State |
@@ -102,6 +120,7 @@ rendered, blocked pages recovered, failures) and `limitations`.
 | `FIRECRAWL_MAX_RENDERS`, `FIRECRAWL_CONCURRENCY`, `FIRECRAWL_TIMEOUT_MS` | 25, 2, 45000 | Firecrawl budget per crawl |
 | `CRAWL_CAPTURE_DIR` | — | writable directory for page captures; without it `capture: true` returns `partial` |
 | `CRAWL_CAPTURE_DEFAULT` | `false` | `true` captures when a request omits `capture` |
+| `CRAWL_CAPTURE_READS_PER_MIN` | 60 | capture reads per client per minute |
 | `CRAWL_CAPTURE_MAX_BYTES` / `CRAWL_CAPTURE_MAX_TOTAL_BYTES` / `CRAWL_CAPTURE_TTL_DAYS` | 5000000 / 1073741824 / 30 | per-page cap, total cap, retention |
 
 ## Security

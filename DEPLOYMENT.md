@@ -34,6 +34,8 @@ filesystem stays read-only; [`compose.yaml`](compose.yaml) mounts the named volu
   succeeds, and `docker exec crawlee-server touch /app/x` fails (read-only root).
 - Captures hold third-party page content. Restrict access to the volume, back it up only if you mean to, and keep it
   out of git. They expire after `CRAWL_CAPTURE_TTL_DAYS` (30); the volume can be deleted at any time.
+- Stored captures are read back with `GET /v1/captures/:id` and `/meta` (same token; owner only). Keep
+  `CRAWL_CAPTURE_READS_PER_MIN` in the Komodo stack's environment next to the other `CRAWL_CAPTURE_*` entries.
 - If the volume is missing or not writable, crawls with `capture: true` still return records with status `partial`.
 
 ## Rollback

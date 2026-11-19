@@ -39,6 +39,23 @@ revisit it with the per-client tokens in 2.4.0.
 Writes are atomic: each file is written under a `.tmp-` name, flushed, then renamed, `.json` last. A capture exists
 only when its `.json` exists, so a crash never leaves a half-written capture that looks complete.
 
+## Reading a capture
+
+`GET /v1/captures/:id` and `GET /v1/captures/:id/meta` (bearer token, owner only; see the README for statuses).
+
+- The id must be exactly 48 lowercase hex characters, checked before any file is opened, so a request cannot reach a
+  path outside `CRAWL_CAPTURE_DIR`. Anything else is 400.
+- Unknown, expired and other-client ids take the same code path and return the same 404 body. Each does at most one
+  metadata file read, and a foreign capture's body is never opened. Ids are 192 random bits, so probing is not feasible.
+- The body response recomputes SHA-256 and compares it to the stored value. A mismatch returns 500 `capture_corrupt`
+  with no body, and the server logs the capture id only. `/meta` returns the stored hash without rereading the body.
+- `/meta` fields: `capture_id`, `url`, `requested_url`, `fetched_at`, `http_status`, `content_type`, `size_bytes`,
+  `sha256`, `fetch_method`, `rendered`, `recovered`, `crawl_id`. `client_id` is never returned.
+- Bodies are served as attachments with `Content-Security-Policy: sandbox` and `nosniff`. A stored content type that
+  is not a plain `type/subtype` with simple parameters is replaced by `application/octet-stream`.
+- Reads bypass the crawl queue, so they work while a crawl runs. The limit is `CRAWL_CAPTURE_READS_PER_MIN` per client
+  (default 60, fixed one-minute window, in memory).
+
 ## Limits and failure
 
 - `CRAWL_CAPTURE_MAX_BYTES` (5 MB): larger pages are not stored; `limitations` names them.

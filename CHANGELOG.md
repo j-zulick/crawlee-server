@@ -10,6 +10,10 @@
   `CRAWL_CAPTURE_TTL_DAYS`; expired captures are swept at startup and hourly.
 - Client identity: `client_id` is an HMAC-SHA-256 of the bearer token; `resolveClient(request)` and a constant-time,
   fail-closed `ownsCapture` live in `src/client.mjs`. Rotating the token orphans older captures (see docs/CAPTURE.md).
+- `GET /v1/captures/:id` (raw bytes, `X-Capture-*` headers, sandbox/nosniff/attachment headers) and
+  `GET /v1/captures/:id/meta`, limited to the client that made the crawl. Unknown, expired and foreign ids give the same
+  404; malformed ids give 400; the SHA-256 is rechecked on every read (500 `capture_corrupt` on mismatch). Reads skip the
+  crawl queue and are limited by `CRAWL_CAPTURE_READS_PER_MIN` (60).
 - `compose.yaml` mounts a `crawlee-captures` volume; the root filesystem stays read-only.
 
 

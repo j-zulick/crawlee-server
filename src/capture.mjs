@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { CheerioCrawler } from '@crawlee/cheerio';
 
 const ID_RE = /^[0-9a-f]{48}$/;
+export const isCaptureId = id => typeof id === 'string' && ID_RE.test(id);
 const DAY_MS = 86_400_000;
 const STALE_TMP_MS = 3_600_000;
 
@@ -88,6 +89,18 @@ export class CaptureStore {
       try { out.push(JSON.parse(await readFile(join(this.cfg.dir, f), 'utf8'))); } catch { /* unreadable: left for the sweep */ }
     }
     return out;
+  }
+
+  // Metadata of one finished capture, or null. The id is validated here too, so no caller can build a path from it.
+  async readMeta(id) {
+    if (!this.cfg.dir || !isCaptureId(id)) return null;
+    try { return JSON.parse(await readFile(join(this.cfg.dir, id + '.json'), 'utf8')); } catch { return null; }
+  }
+
+  // Stored bytes of a capture, or null when the body is gone.
+  async readBody(id) {
+    if (!this.cfg.dir || !isCaptureId(id)) return null;
+    try { return await readFile(join(this.cfg.dir, id + '.body')); } catch { return null; }
   }
 
   // Removes captures older than the TTL, plus stale temp files and bodies that never got their metadata.
