@@ -3,6 +3,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { load } from 'cheerio';
 import { inventory, page } from './fixture-site.mjs';
 import { runCrawl, crawlPolicy, validateRequest, BadRequest } from '../src/crawl.mjs';
@@ -196,4 +200,29 @@ test('per-crawl render budget is enforced', async t => {
   assert.equal(fc.calls.scrape.length, 2);
   assert.equal(out.stats.records, 2);
   assert.equal(out.firecrawl.render_budget_skips, 4);
+});
+
+test('capture: a Firecrawl page stores the rendered HTML, marked rendered, hashed, with the requested and final URL', async t => {
+  const site = await startSite(2); const fc = await startFirecrawl(site);
+  const dir = await mkdtemp(join(tmpdir(), 'capture-test-'));
+  t.after(() => { site.server.close(); fc.server.close(); rm(dir, { recursive: true, force: true }); });
+  const out = await runCrawl({ start_urls: [site.base + '/spa/item/1'], mode: 'page', render: 'always', capture: true }, policyWith(fc.base, { CRAWL_CAPTURE_DIR: dir }), { clientId: 'tok_test' });
+  const rec = out.records[0];
+  assert.equal(rec.fetched_via, 'firecrawl');
+  const body = await readFile(join(dir, rec.capture_id + '.body'));
+  assert.deepEqual(body, Buffer.from(page(site.inv[0]), 'utf8'));
+  assert.equal(rec.sha256, createHash('sha256').update(body).digest('hex'));
+  const meta = JSON.parse(await readFile(join(dir, rec.capture_id + '.json'), 'utf8'));
+  assert.equal(meta.rendered, true); assert.equal(meta.fetch_method, 'firecrawl');
+  assert.equal(meta.url, site.base + '/spa/item/1'); assert.equal(meta.requested_url, site.base + '/spa/item/1');
+  assert.equal(meta.http_status, 200);
+});
+
+test('capture: a page recovered through Firecrawl after plain HTTP failed is captured and marked recovered', async t => {
+  const site = await startSite(2); const fc = await startFirecrawl(site);
+  const dir = await mkdtemp(join(tmpdir(), 'capture-test-'));
+  t.after(() => { site.server.close(); fc.server.close(); rm(dir, { recursive: true, force: true }); });
+  const out = await runCrawl({ start_urls: [site.base + '/blocked/item/1'], mode: 'page', capture: true }, policyWith(fc.base, { CRAWL_CAPTURE_DIR: dir }));
+  const meta = JSON.parse(await readFile(join(dir, out.records[0].capture_id + '.json'), 'utf8'));
+  assert.equal(meta.recovered, true); assert.equal(meta.rendered, true);
 });

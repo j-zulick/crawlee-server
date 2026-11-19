@@ -60,6 +60,11 @@ export function startFixture({ n = 12, perPage = 5, duplicate = true, delayMs = 
     if (u.pathname === '/robots.txt') return html(200, 'User-agent: *\nDisallow: /private/\n', 'text/plain');
     if (u.pathname === '/sitemap.xml') return html(200, `<?xml version="1.0"?><urlset>${inv.map(v => `<url><loc>http://${req.headers.host}/inventory/${v.id}</loc></url>`).join('')}</urlset>`, 'application/xml');
     if (u.pathname === '/private/secret') return html(200, '<h1>should never be fetched</h1>');
+    // Synthetic pages for capture tests: a redirect, bytes that are not valid UTF-8 (BOM + 0xFF), and an oversized page.
+    const go = u.pathname.match(/^\/go\/(\d+)$/);
+    if (go) { res.writeHead(302, { location: `/inventory/${go[1]}` }); return res.end(); }
+    if (u.pathname === '/raw') { res.writeHead(200, { 'content-type': 'text/html' }); return res.end(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('<html><head><title>Raw</title></head><body><p>caf'), Buffer.from([0xff, 0xe9]), Buffer.from('</p></body></html>\r\n')])); }
+    if (u.pathname === '/big') return html(200, `<html><head><title>Big</title></head><body><p>${'x'.repeat(50_000)}</p></body></html>`);
     const m = u.pathname.match(/^\/inventory\/(\d+)$/);
     if (m) { const v = inv[+m[1] - 1]; return v ? html(200, page(v)) : html(404, 'not found'); }
     if (u.pathname === '/inventory/dup-of-1') return html(200, page(inv[0]));

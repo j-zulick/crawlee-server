@@ -17,6 +17,9 @@ WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY package.json NOTICES.md LICENSE ./
 COPY src ./src
+# Capture directory: owned by `node` so a named volume mounted here is writable under the read-only root.
+RUN mkdir -p /var/lib/crawlee-captures && chown node:node /var/lib/crawlee-captures
+ENV CRAWL_CAPTURE_DIR=/var/lib/crawlee-captures
 USER node
 EXPOSE 8794
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD node -e "fetch('http://127.0.0.1:8794/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

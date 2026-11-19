@@ -43,7 +43,26 @@
         "stopped": { "enum": [null, "max_pages", "time_budget"] }
       }
     },
-    "records": { "type": "array", "items": { "type": "object" } },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "capture_id": { "type": "string", "pattern": "^[0-9a-f]{48}$" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "fetched_at": { "type": "string", "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$" }
+        }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "required": ["enabled", "stored", "not_stored"],
+      "properties": {
+        "enabled": { "enum": [true] },
+        "stored": { "type": "integer", "minimum": 0 },
+        "not_stored": { "type": "integer", "minimum": 0 }
+      }
+    },
     "failures": {
       "type": "array",
       "maxItems": 50,

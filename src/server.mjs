@@ -6,6 +6,7 @@ import { timingSafeEqual, createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { runCrawl, crawlPolicy, BadRequest } from './crawl.mjs';
 import { UrlRefused } from './ssrf.mjs';
+import { storeFor, clientIdFromToken } from './capture.mjs';
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 const digest = s => createHash('sha256').update(String(s)).digest();
@@ -15,6 +16,7 @@ export function createServer({ env = process.env, crawl = runCrawl } = {}) {
   const token = env.CRAWL_TOKEN_FILE ? readFileSync(env.CRAWL_TOKEN_FILE, 'utf8').trim() : env.CRAWL_TOKEN || '';
   if (token.length < 24) throw Error('CRAWL_TOKEN_FILE must hold a token of 24+ characters');
   const want = digest('Bearer ' + token);
+  const clientId = clientIdFromToken(token);
   const maxQueued = Number(env.CRAWL_MAX_QUEUED || 2);
   let running = 0; const waiters = [];
   const acquire = () => (running < 1 ? (running++, Promise.resolve()) : waiters.length >= maxQueued ? Promise.reject(Object.assign(Error('busy'), { busy: true })) : new Promise(r => waiters.push(r)));
@@ -23,7 +25,7 @@ export function createServer({ env = process.env, crawl = runCrawl } = {}) {
 
   const send = (res, code, obj) => { const b = JSON.stringify(obj); res.writeHead(code, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(b), 'cache-control': 'no-store' }); res.end(b); };
 
-  return http.createServer(async (req, res) => {
+  const server = http.createServer(async (req, res) => {
     try {
       if (req.method === 'GET' && req.url === '/healthz') return send(res, 200, { ok: true, version: VERSION, firecrawl: !!policy.firecrawl, robots: policy.respectRobots ? 'respected' : 'ignored', running, queued: waiters.length, served });
       if (!timingSafeEqual(digest(req.headers.authorization || ''), want)) return send(res, 401, { error: 'unauthorized' });
@@ -33,7 +35,7 @@ export function createServer({ env = process.env, crawl = runCrawl } = {}) {
       for await (const c of req) { size += c.length; if (size > 64_000) return send(res, 413, { error: 'body_too_large' }); chunks.push(c); }
       let body; try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return send(res, 400, { error: 'invalid_json' }); }
       try { await acquire(); } catch { return send(res, 429, { error: 'busy', retry_after_s: 30 }); }
-      try { const out = await crawl(body, policy); served++; return send(res, 200, out); }
+      try { const out = await crawl(body, policy, { clientId }); served++; return send(res, 200, out); }
       finally { release(); }
     } catch (e) {
       if (e instanceof BadRequest) return send(res, 400, { error: e.message });
@@ -42,6 +44,9 @@ export function createServer({ env = process.env, crawl = runCrawl } = {}) {
       return send(res, 500, { error: 'crawl_failed' });
     }
   });
+  // Expired captures are removed now and then hourly, for as long as the server runs.
+  server.on('close', storeFor(policy.capture).start());
+  return server;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {

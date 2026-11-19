@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased (2.2.0)
+
+### Added
+- Page captures: `capture: true` stores the raw page body exactly as received (or Firecrawl's rendered HTML) with its
+  SHA-256, fetch time, final and requested URL, status, content type, fetch method, `client_id` and `crawl_id`.
+  Records gain `capture_id`, `sha256` and `fetched_at`. Off by default. See [docs/CAPTURE.md](docs/CAPTURE.md).
+- Settings `CRAWL_CAPTURE_DIR`, `CRAWL_CAPTURE_DEFAULT`, `CRAWL_CAPTURE_MAX_BYTES`, `CRAWL_CAPTURE_MAX_TOTAL_BYTES`,
+  `CRAWL_CAPTURE_TTL_DAYS`; expired captures are swept at startup and hourly.
+- `compose.yaml` mounts a `crawlee-captures` volume; the root filesystem stays read-only.
+
+
 ## 2.1.0 — Nov 2026
 
 Hardening and test coverage; no API changes.

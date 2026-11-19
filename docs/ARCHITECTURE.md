@@ -41,6 +41,10 @@ in one place whichever way a page was fetched, so results look the same either w
 `selector`) and which required fields are missing. Missing fields are the signal that a site changed its markup
 ("extractor drift") or needs a model-based fallback.
 
+**Captures are opt-in and separate from jobs.** With `capture: true` the raw page, its SHA-256 and fetch time are
+written to a volume during the crawl ([CAPTURE.md](CAPTURE.md)). They do not depend on crawl or job state, and a
+capture problem degrades the response to `partial` instead of failing the crawl.
+
 **Fail closed on addresses, fail soft on fetches.** A private, loopback, link-local, metadata or CGNAT address is
 refused at every hop, including the URL Firecrawl reports after rendering. A failed fetch or Firecrawl outage becomes
 a listed failure; the crawl still returns what it has.

@@ -1,9 +1,10 @@
 // One bounded crawl = one fresh in-memory Crawlee storage. No disk state, no shared queue.
-import { CheerioCrawler, Configuration, RequestQueue, ProxyConfiguration, log, LogLevel } from '@crawlee/cheerio';
+import { Configuration, RequestQueue, ProxyConfiguration, log, LogLevel } from '@crawlee/cheerio';
 import { randomUUID } from 'node:crypto';
 import { checkUrl, UrlRefused } from './ssrf.mjs';
 import { load } from 'cheerio';
 import { extractVehicle, extractGeneric, looksLikeListing } from './extract.mjs';
+import { capturePolicy, storeFor, CapturingCheerioCrawler } from './capture.mjs';
 import { Firecrawl, firecrawlPolicy, looksClientRendered } from './firecrawl.mjs';
 
 log.setLevel(process.env.CRAWL_LOG_LEVEL === 'debug' ? LogLevel.DEBUG : LogLevel.WARNING);
@@ -19,6 +20,7 @@ export function crawlPolicy(env = {}) {
     proxyUrl: env.CRAWL_PROXY_URL || null,
     userAgent: env.CRAWL_USER_AGENT || (env.CRAWL_IGNORE_ROBOTS === 'true' ? 'crawlee-server/2.0 (+self-hosted)' : 'crawlee-server/2.0 (+self-hosted; respects robots.txt)'),
     firecrawl: firecrawlPolicy(env),
+    capture: capturePolicy(env),
   });
 }
 
@@ -36,6 +38,7 @@ export function validateRequest(body, policy) {
     if (render === 'always' || mode === 'map') throw new BadRequest('firecrawl_not_configured');
     render = 'never';
   }
+  if (body.capture !== undefined && typeof body.capture !== 'boolean') throw new BadRequest('capture_must_be_boolean');
   const profile = body.profile ?? 'generic';
   if (!['vehicle', 'generic'].includes(profile)) throw new BadRequest('profile_must_be_vehicle_or_generic');
   const strs = (v, name, max = 20) => { if (v === undefined) return []; if (!Array.isArray(v) || v.length > max || !v.every(s => typeof s === 'string' && s.length < 300)) throw new BadRequest(name + '_invalid'); return v; };
@@ -51,6 +54,7 @@ export function validateRequest(body, policy) {
     max_depth: int(body.max_depth, 2, 0, policy.maxDepth),
     concurrency: int(body.concurrency, 3, 1, policy.maxConcurrency),
     listings_only: body.listings_only !== false,
+    capture: body.capture ?? policy.capture.byDefault,
   };
 }
 
@@ -77,7 +81,7 @@ async function sitemapUrls(startUrl, policy, cap, fetcher = fetch) {
 
 const globToRe = g => new RegExp('^' + g.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*/g, '\u0000').replace(/\*/g, '[^/?#]*').replace(/\u0000/g, '.*') + '$');
 
-export async function runCrawl(reqBody, policy = crawlPolicy(process.env), { fetcher = fetch, firecrawlFetcher = fetch } = {}) {
+export async function runCrawl(reqBody, policy = crawlPolicy(process.env), { fetcher = fetch, firecrawlFetcher = fetch, clientId = null } = {}) {
   const req = validateRequest(reqBody, policy);
   const started = Date.now();
   const id = randomUUID();
@@ -102,15 +106,33 @@ export async function runCrawl(reqBody, policy = crawlPolicy(process.env), { fet
     try { await checkUrl(finalUrl, policy); } catch (e) { refused.push({ url: finalUrl, reason: e instanceof UrlRefused ? e.reason : 'invalid_url' }); return null; }
     if (!onSite(finalUrl)) { refused.push({ url: finalUrl, reason: 'redirected_off_site' }); return null; }
     fcStats.rendered++;
-    return { $: load(r.html), finalUrl };
+    // The rendered HTML that extraction uses is what gets captured (as UTF-8), marked as rendered.
+    const source = req.capture ? { bytes: Buffer.from(r.html, 'utf8'), url: finalUrl, requested_url: url, fetched_at: new Date(), http_status: r.status_code, content_type: 'text/html; charset=utf-8', rendered: true } : null;
+    return { $: load(r.html), finalUrl, source };
   };
   const linksFrom = ($, pageUrl) => {
     const out = new Set();
     $(req.link_selector).each((_, el) => { const h = $(el).attr('href'); if (!h) return; try { const u = new URL(h, pageUrl); u.hash = ''; if (['http:', 'https:'].includes(u.protocol) && wanted(u.href)) out.add(u.href); } catch {} });
     return [...out];
   };
+  // Captures are stored for pages that yield a record. Problems never fail the crawl; they become limitations.
+  const cap = { problem: null, stored: 0, notStored: {} };
+  const store = req.capture ? storeFor(policy.capture) : null;
+  if (store) cap.problem = await store.problem();
+  const capture = async (source, via, recovered) => {
+    if (!store || !source) return {};
+    const miss = reason => { (cap.notStored[reason] ??= []).push(source.url); return {}; };
+    if (cap.problem) return miss('unavailable');
+    const w = await store.write(source.bytes, {
+      url: source.url, requested_url: source.requested_url, fetched_at: source.fetched_at.toISOString(), http_status: source.http_status,
+      content_type: source.content_type, fetch_method: via, rendered: source.rendered, recovered, client_id: clientId, crawl_id: id,
+    });
+    if (!w.ok) { if (w.reason === 'write_failed') cap.problem = 'capture_write_failed'; return miss(w.reason); }
+    cap.stored++;
+    return { capture_id: w.meta.capture_id, sha256: w.meta.sha256, fetched_at: w.meta.fetched_at };
+  };
   // Extraction shared by both fetch paths; `via` records how the page was fetched.
-  const emit = ($, finalUrl, via) => {
+  const emit = async ($, finalUrl, via, source, recovered = false) => {
     if (include.length && !isDetail(finalUrl)) return; // index / navigation page: follow links, emit nothing
     if (req.profile === 'vehicle') {
       const rec = extractVehicle($, finalUrl, { selectors: req.selectors });
@@ -118,8 +140,10 @@ export async function runCrawl(reqBody, policy = crawlPolicy(process.env), { fet
       const key = rec.vin || finalUrl;
       if (byKey.has(key)) { duplicates++; byKey.get(key).duplicate_urls.push(finalUrl); return; }
       const out = { ...rec, fetched_via: via, duplicate_urls: [] }; byKey.set(key, out); records.push(out);
+      Object.assign(out, await capture(source, via, recovered));
     } else {
-      records.push({ ...extractGeneric($, finalUrl, { fields: req.selectors }), fetched_via: via });
+      const out = { ...extractGeneric($, finalUrl, { fields: req.selectors }), fetched_via: via }; records.push(out);
+      Object.assign(out, await capture(source, via, recovered));
     }
   };
   // render=auto: re-fetch through Firecrawl when the HTML looks JavaScript-built, or when a page that should be a
@@ -152,7 +176,7 @@ export async function runCrawl(reqBody, policy = crawlPolicy(process.env), { fet
   }
   await queue.addRequests(seeds.slice(0, req.max_pages).map(u => ({ url: u, userData: { depth: 0 } })));
 
-  const crawler = new CheerioCrawler({
+  const crawler = new CapturingCheerioCrawler({
     requestQueue: queue,
     maxRequestsPerCrawl: req.max_pages,
     maxConcurrency: req.concurrency,
@@ -168,17 +192,22 @@ export async function runCrawl(reqBody, policy = crawlPolicy(process.env), { fet
       gotOptions.headers = { ...gotOptions.headers, 'user-agent': policy.userAgent };
       gotOptions.followRedirect = true; gotOptions.maxRedirects = 3;
     }],
-    async requestHandler({ request, $, enqueueLinks }) {
+    async requestHandler({ request, $, response, enqueueLinks }) {
       const finalUrl = request.loadedUrl || request.url;
       if (finalUrl !== request.url) await checkUrl(finalUrl, policy);
       const depth = request.userData.depth ?? 0;
       if (!onSite(finalUrl)) { refused.push({ url: finalUrl, reason: 'redirected_off_site' }); return; }
       if (depth > 0 && !wanted(finalUrl)) { refused.push({ url: finalUrl, reason: 'excluded_after_redirect' }); return; }
       pages++;
-      let page$ = $, pageUrl = finalUrl, via = 'http';
+      let page$ = $, pageUrl = finalUrl, via = 'http', source = null;
+      const raw = crawler.raw.get(request);
+      if (req.capture && raw) {
+        if (raw.over) (cap.notStored.too_large ??= []).push(finalUrl);
+        else source = { bytes: Buffer.concat(raw.chunks), url: finalUrl, requested_url: request.url, fetched_at: raw.finishedAt || new Date(), http_status: response.statusCode, content_type: String(response.headers?.['content-type'] || '') || null, rendered: false };
+      }
       if (needsRender($, finalUrl)) {
         const r = await render(finalUrl);
-        if (r) { page$ = r.$; pageUrl = r.finalUrl; via = 'firecrawl'; }
+        if (r) { page$ = r.$; pageUrl = r.finalUrl; via = 'firecrawl'; source = r.source; }
       }
       if (req.mode === 'crawl' && depth < req.max_depth) {
         if (via === 'http') {
@@ -191,7 +220,7 @@ export async function runCrawl(reqBody, policy = crawlPolicy(process.env), { fet
           if (urls.length) await enqueueLinks({ urls, transformRequestFunction: r => ({ ...r, userData: { depth: depth + 1 } }) });
         }
       }
-      emit(page$, pageUrl, via);
+      await emit(page$, pageUrl, via, source);
     },
     async failedRequestHandler({ request, error }) {
       const reason = error instanceof UrlRefused ? error.reason : String(error?.message || error).slice(0, 160);
@@ -205,24 +234,30 @@ export async function runCrawl(reqBody, policy = crawlPolicy(process.env), { fet
             const urls = linksFrom(r.$, r.finalUrl);
             if (urls.length) await queue.addRequests(urls.map(u => ({ url: u, userData: { depth: depth + 1 } })));
           }
-          emit(r.$, r.finalUrl, 'firecrawl');
+          await emit(r.$, r.finalUrl, 'firecrawl', r.source, true);
           return;
         }
       }
       failures.push({ url: request.url, error: reason });
     },
   }, config);
+  if (store) crawler.captureLimit = policy.capture.maxBytes;
 
   const timer = setTimeout(() => { stoppedReason = 'time_budget'; crawler.stop('time budget reached'); }, policy.maxSeconds * 1000);
   try { await crawler.run(); } finally { clearTimeout(timer); await queue.drop().catch(() => {}); }
   if (!stoppedReason && pages >= req.max_pages) stoppedReason = 'max_pages';
 
+  const capNote = [];
+  if (cap.problem) capNote.push(`Page capture was requested but could not be written (${cap.problem}); records were returned without capture fields${cap.stored ? ' for the pages after the failure' : ''}.`);
+  const names = { too_large: `exceeded CRAWL_CAPTURE_MAX_BYTES (${policy.capture.maxBytes} bytes)`, total_cap: `would exceed CRAWL_CAPTURE_MAX_TOTAL_BYTES (${policy.capture.maxTotalBytes} bytes)` };
+  for (const [reason, urls] of Object.entries(cap.notStored)) if (names[reason]) capNote.push(`${urls.length} page(s) ${names[reason]} and were not stored: ${urls.slice(0, 5).join(', ')}${urls.length > 5 ? ', …' : ''}.`);
   const missing = records.filter(r => r.missing_required?.length).length;
   return {
-    status: records.length ? (failures.length ? 'partial' : 'ok') : (failures.length || refused.length ? 'failed' : 'no_records'),
+    status: records.length ? (failures.length || cap.problem ? 'partial' : 'ok') : (failures.length || refused.length ? 'failed' : 'no_records'),
     crawl_id: id, profile: req.profile, mode: req.mode,
     firecrawl: { enabled: fc.enabled, render: req.render, pages_rendered: fcStats.rendered, http_failures_recovered: fcStats.fallback_after_http_failure, map_urls_found: fcStats.map_urls, render_budget_skips: fcStats.budget_skips, failures: fcStats.failures.slice(0, 20) },
     stats: { pages_fetched: pages, skipped: refused.length, links_not_followed: skippedCounts, records: records.length, duplicates, failures: failures.length, records_missing_required: missing, seconds: Math.round((Date.now() - started) / 100) / 10, stopped: stoppedReason },
+    ...(store ? { capture: { enabled: true, stored: cap.stored, not_stored: Object.values(cap.notStored).reduce((n, u) => n + u.length, 0) } } : {}),
     records, failures: failures.slice(0, 50), refused: refused.slice(0, 50),
     limitations: [
       fc.enabled
@@ -230,6 +265,7 @@ export async function runCrawl(reqBody, policy = crawlPolicy(process.env), { fet
         : 'Static HTML only (Firecrawl not configured): data rendered by JavaScript is not seen.',
       'Fixed extraction (JSON-LD, microdata, then selectors). Records listing missing_required fields are candidates for LLM fallback.',
       ...(fcStats.failures.length ? [`Firecrawl failed for ${fcStats.failures.length} page(s) (${[...new Set(fcStats.failures.map(f => f.outcome))].join(', ')}); those pages were not rendered, so JavaScript-built data on them is missing.`] : []),
+      ...capNote,
       policy.respectRobots ? 'robots.txt is respected; disallowed pages are listed under refused (skipped_robotsTxt).' : 'robots.txt checking is OFF.',
     ],
   };

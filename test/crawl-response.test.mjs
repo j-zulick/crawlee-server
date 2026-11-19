@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { startFixture } from './fixture-site.mjs';
-import { runCrawl } from '../src/crawl.mjs';
+import { runCrawl, crawlPolicy } from '../src/crawl.mjs';
 import { createServer } from '../src/server.mjs';
 
 const schema = JSON.parse(await readFile(new URL('./crawl-response.schema.json', import.meta.url), 'utf8'));
@@ -15,6 +18,7 @@ function validate(value, s, path = '$') {
   if (s.type) {
     if (!typeOk[s.type](value)) return [`${path}: expected ${s.type}, got ${JSON.stringify(value)}`];
     if (typeof value === 'number' && s.minimum !== undefined && value < s.minimum) errors.push(`${path}: below minimum ${s.minimum}`);
+    if (typeof value === 'string' && s.pattern && !new RegExp(s.pattern).test(value)) errors.push(`${path}: does not match ${s.pattern}`);
     if (typeof value === 'string' && s.minLength !== undefined && value.length < s.minLength) errors.push(`${path}: shorter than ${s.minLength}`);
     if (s.type === 'array') {
       if (s.minItems !== undefined && value.length < s.minItems) errors.push(`${path}: fewer than ${s.minItems} items`);
@@ -33,6 +37,25 @@ function validate(value, s, path = '$') {
 test('validator rejects malformed responses', () => {
   assert.ok(validate({}, schema).length > 0);
   assert.ok(validate({ status: 'bogus' }, schema).some(e => e.includes('status')));
+  const bad = { records: [{ capture_id: 'guessable', sha256: 'ABC', fetched_at: 'yesterday' }], capture: { enabled: false } };
+  const errs = validate(bad, schema).join('\n');
+  for (const k of ['capture_id', 'sha256', 'fetched_at', 'capture.enabled']) assert.ok(errs.includes(k), k);
+});
+
+test('/v1/crawl response with capture on matches the JSON schema, with capture fields on every record', async t => {
+  const { server, base } = await startFixture({ duplicate: false });
+  t.after(() => server.close());
+  const dir = await mkdtemp(join(tmpdir(), 'capture-test-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const env = { CRAWL_ALLOW_PRIVATE_HOSTS: '127.0.0.1', CRAWL_MAX_SECONDS: '60', CRAWL_CAPTURE_DIR: dir };
+  const out = await runCrawl({ start_urls: [base + '/inventory'], profile: 'vehicle', include_patterns: [base + '/inventory/*'], max_pages: 4, capture: true }, crawlPolicy(env));
+  assert.deepEqual(validate(out, schema), []);
+  assert.ok(out.records.length > 0);
+  assert.ok(out.records.every(r => r.capture_id && r.sha256 && r.fetched_at));
+  assert.equal(out.capture.stored, out.records.length);
+  const off = await runCrawl({ start_urls: [base + '/inventory/1'], mode: 'page' }, crawlPolicy(env));
+  assert.deepEqual(validate(off, schema), []);
+  assert.ok(!('capture' in off));
 });
 
 test('/v1/crawl response matches the JSON schema', async t => {

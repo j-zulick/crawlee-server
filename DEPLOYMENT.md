@@ -21,6 +21,21 @@ crawlee-server runs on any Docker host. These steps use [Komodo](https://komo.do
 4. Check: `curl -s http://127.0.0.1:8794/healthz` → `{"ok":true,"version":"2.1.0",…}`
    (`"firecrawl":true` when Firecrawl is configured).
 
+## Page captures (optional)
+
+`capture: true` requests write raw pages to `CRAWL_CAPTURE_DIR` (see [docs/CAPTURE.md](docs/CAPTURE.md)). The root
+filesystem stays read-only; [`compose.yaml`](compose.yaml) mounts the named volume `crawlee-captures` at
+`/var/lib/crawlee-captures`, the only writable path besides `/tmp`.
+
+- **Komodo:** in the stack's compose, keep the `crawlee-captures` volume and the `CRAWL_CAPTURE_*` environment entries
+  from `compose.yaml`, then Deploy. For a bind mount instead of a named volume, create the folder first and give it to
+  uid 1000: `mkdir -p <stack-dir>/captures && sudo chown 1000:1000 <stack-dir>/captures && chmod 700 <stack-dir>/captures`.
+- **Check:** `docker exec crawlee-server touch /var/lib/crawlee-captures/.w && docker exec crawlee-server rm /var/lib/crawlee-captures/.w`
+  succeeds, and `docker exec crawlee-server touch /app/x` fails (read-only root).
+- Captures hold third-party page content. Restrict access to the volume, back it up only if you mean to, and keep it
+  out of git. They expire after `CRAWL_CAPTURE_TTL_DAYS` (30); the volume can be deleted at any time.
+- If the volume is missing or not writable, crawls with `capture: true` still return records with status `partial`.
+
 ## Rollback
 
 Komodo → `crawlee-server` → set the previous image tag → Deploy. Images are immutable and versioned, so a rollback is

@@ -71,6 +71,7 @@ Crawlee owns the queue, limits, robots.txt, SSRF checks and extraction. Firecraw
 | `include_patterns` / `exclude_patterns` | — | globs; `*` = one path segment, `**` = anything |
 | `selectors` | — | named CSS selectors to return as fields (generic) or to override fields (vehicle) |
 | `max_pages`, `max_depth`, `concurrency` | 50, 2, 3 | capped by the server limits below |
+| `capture` | `false` | `true` stores the raw page for each record and adds `capture_id`, `sha256` and `fetched_at` to it (see [docs/CAPTURE.md](docs/CAPTURE.md)) |
 
 The response has `status`, `stats`, `records`, `failures`, `refused` (with reasons), a `firecrawl` block (pages
 rendered, blocked pages recovered, failures) and `limitations`.
@@ -86,7 +87,8 @@ rendered, blocked pages recovered, failures) and `limitations`.
 | SSRF guard: private, loopback, link-local, metadata and CGNAT addresses refused, including after redirects and for Firecrawl's final URL | **Demonstrated** |
 | Firecrawl against a live self-hosted instance | **Locally verified:** see [CHANGELOG](CHANGELOG.md) |
 | Playwright browser mode as an alternative to Firecrawl | **Proposed** (v2.1) |
-| Durable jobs that survive restarts; hash-checked page captures | **Proposed** (v2.2, v2.3) |
+| Durable jobs that survive restarts | **Proposed** (v2.3) |
+| Hash-checked page captures (`capture: true`): raw body, SHA-256, fetch time | **Demonstrated:** tests in `test/capture.test.mjs`; container start with a read-only root and a volume not yet run in CI |
 
 ## Server settings
 
@@ -98,6 +100,9 @@ rendered, blocked pages recovered, failures) and `limitations`.
 | `CRAWL_PROXY_URL`, `CRAWL_USER_AGENT` | — | outbound proxy, user agent |
 | `FIRECRAWL_URL`, `FIRECRAWL_API_KEY_FILE` | off | enable Firecrawl; the key is never logged or returned |
 | `FIRECRAWL_MAX_RENDERS`, `FIRECRAWL_CONCURRENCY`, `FIRECRAWL_TIMEOUT_MS` | 25, 2, 45000 | Firecrawl budget per crawl |
+| `CRAWL_CAPTURE_DIR` | — | writable directory for page captures; without it `capture: true` returns `partial` |
+| `CRAWL_CAPTURE_DEFAULT` | `false` | `true` captures when a request omits `capture` |
+| `CRAWL_CAPTURE_MAX_BYTES` / `CRAWL_CAPTURE_MAX_TOTAL_BYTES` / `CRAWL_CAPTURE_TTL_DAYS` | 5000000 / 1073741824 / 30 | per-page cap, total cap, retention |
 
 ## Security
 

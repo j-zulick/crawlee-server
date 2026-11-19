@@ -14,9 +14,17 @@ services:
       # Firecrawl (optional): rendering for JavaScript-heavy or blocked pages.
       FIRECRAWL_URL: ${FIRECRAWL_URL:-}
       FIRECRAWL_API_KEY_FILE: ${FIRECRAWL_API_KEY_FILE:-}
+      # Page captures (opt-in per request with "capture": true). Stored in the volume below.
+      CRAWL_CAPTURE_DIR: /var/lib/crawlee-captures
+      CRAWL_CAPTURE_DEFAULT: "false"
+      CRAWL_CAPTURE_MAX_BYTES: "5000000"
+      CRAWL_CAPTURE_MAX_TOTAL_BYTES: "1073741824"
+      CRAWL_CAPTURE_TTL_DAYS: "30"
     volumes:
       - ./crawl.token:/run/secrets/crawl.token:ro
       # - ./firecrawl.key:/run/secrets/firecrawl.key:ro
+      # The only writable path besides /tmp. Holds raw third-party page content: keep it private, never commit it.
+      - crawlee-captures:/var/lib/crawlee-captures
     read_only: true
     tmpfs: ["/tmp:size=256m"]
     cap_drop: [ALL]
@@ -27,3 +35,6 @@ services:
     logging:
       driver: json-file
       options: { max-size: "20m", max-file: "3" }
+
+volumes:
+  crawlee-captures:
