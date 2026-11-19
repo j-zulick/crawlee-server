@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.1.0 — Nov 2026
+
+Hardening and test coverage; no API changes.
+
+### Security
+- A crawl whose start URL redirects to a loopback host is now refused (covered by a test).
+
+### Tests
+- Crawl request errors and queue overflow on the API.
+- Crawl page and time budget stops.
+- Sitemap index discovery through child sitemaps.
+- Firecrawl timeout and error responses, recording a limitation on failure.
+- `/v1/crawl` response shape validated against a JSON schema.
+- Coverage script with thresholds, a badge and a test README.
+
+### Changed
+- CI: a stable `tests` check gates on the whole Node matrix.
+- Deployment guide is host-agnostic; Node base image bumped to 26-bookworm-slim.
+
 ## 2.0.0 — Nov 2026
 
 A rebuild of the 2025 prototype into one service.

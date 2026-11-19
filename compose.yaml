@@ -1,7 +1,7 @@
 # Example deployment. Create the token first:  umask 077; openssl rand -hex 32 > crawl.token
 services:
   crawlee-server:
-    image: ghcr.io/j-zulick/crawlee-server:${CRAWLEE_SERVER_VERSION:-2.0.0}
+    image: ghcr.io/j-zulick/crawlee-server:${CRAWLEE_SERVER_VERSION:-2.1.0}
     container_name: crawlee-server
     restart: unless-stopped
     ports:
