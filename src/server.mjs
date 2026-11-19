@@ -5,15 +5,17 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { runCrawl, crawlPolicy, BadRequest } from './crawl.mjs';
 import { UrlRefused } from './ssrf.mjs';
-import { storeFor, isCaptureId, sha256Hex } from './capture.mjs';
+import { storeFor, isCaptureId, sha256Hex, captureMacKey } from './capture.mjs';
 import { makeResolveClient, ownsCapture } from './client.mjs';
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 export function createServer({ env = process.env, crawl = runCrawl } = {}) {
-  const policy = crawlPolicy(env);
+  const base = crawlPolicy(env);
   const token = env.CRAWL_TOKEN_FILE ? readFileSync(env.CRAWL_TOKEN_FILE, 'utf8').trim() : env.CRAWL_TOKEN || '';
   if (token.length < 24) throw Error('CRAWL_TOKEN_FILE must hold a token of 24+ characters');
+  // Captures are written and read with a metadata MAC keyed from the token.
+  const policy = { ...base, capture: Object.freeze({ ...base.capture, macKey: captureMacKey(token) }) };
   const resolveClient = makeResolveClient(token);
   const maxQueued = Number(env.CRAWL_MAX_QUEUED || 2);
   let running = 0; const waiters = [];
@@ -46,6 +48,7 @@ export function createServer({ env = process.env, crawl = runCrawl } = {}) {
     const meta = await store.readMeta(id);
     // Unknown, expired and foreign captures take the same path and give the same answer.
     if (!ownsCapture(clientId, meta) || meta.capture_id !== id) return send(res, 404, NOT_FOUND);
+    if (!store.metaIntact(meta)) { console.error('capture_corrupt', id); return send(res, 500, { error: 'capture_corrupt' }); }
     if (metaOnly) return send(res, 200, Object.fromEntries(META_FIELDS.filter(k => k in meta).map(k => [k, meta[k]])));
     const body = await store.readBody(id);
     if (!body) return send(res, 404, NOT_FOUND);

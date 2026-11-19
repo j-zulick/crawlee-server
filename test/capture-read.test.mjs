@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../src/server.mjs';
 import { crawlPolicy } from '../src/crawl.mjs';
-import { storeFor, sha256Hex, clientIdFromToken } from '../src/capture.mjs';
+import { storeFor, sha256Hex, clientIdFromToken, captureMacKey } from '../src/capture.mjs';
 
 const TOKEN = 'x'.repeat(32);
 const OTHER = 'y'.repeat(32);
@@ -19,7 +19,7 @@ async function setup(t, extraEnv = {}, crawl = async () => ({ status: 'ok' })) {
   const srv = createServer({ env, crawl });
   await new Promise(r => srv.listen(0, '127.0.0.1', r));
   t.after(() => { srv.close(); return rm(dir, { recursive: true, force: true }); });
-  const store = storeFor(crawlPolicy(env).capture);
+  const store = storeFor({ ...crawlPolicy(env).capture, macKey: captureMacKey(TOKEN) });
   const base = `http://127.0.0.1:${srv.address().port}`;
   const put = async (token = TOKEN, bytes = PAGE, extra = {}) => (await store.write(bytes, {
     url: 'http://page.test/a', requested_url: 'http://page.test/a', fetched_at: new Date().toISOString(), http_status: 200,

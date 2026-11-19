@@ -7,7 +7,7 @@
 //
 // Off unless a request sets `capture: true` (or CRAWL_CAPTURE_DEFAULT=true). Captured pages are third-party content:
 // they stay in this directory and are never logged, returned in responses or put in the repo.
-import { randomBytes, createHash } from 'node:crypto';
+import { randomBytes, createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { open, rename, rm, readdir, readFile, stat, access, constants } from 'node:fs/promises';
 import { Transform } from 'node:stream';
 import { join } from 'node:path';
@@ -32,6 +32,11 @@ export function capturePolicy(env = {}) {
 export { clientIdFromToken } from './client.mjs';   // client identity lives in client.mjs
 
 export const sha256Hex = bytes => createHash('sha256').update(bytes).digest('hex');
+// Metadata MAC: the hash only proves the body matches the metadata, so with a key the metadata is signed too.
+// The key is derived from the server token; without it (library use, tests) captures are written unsigned.
+export const captureMacKey = token => createHmac('sha256', String(token)).update('crawlee-server capture-meta v1').digest();
+const canonical = meta => JSON.stringify(Object.fromEntries(Object.entries(meta).filter(([k]) => k !== 'mac').sort(([a], [b]) => (a < b ? -1 : 1))));
+const macOf = (key, meta) => createHmac('sha256', key).update(canonical(meta)).digest('hex');
 // 192 random bits, hex: unguessable, and safe to use as a file name.
 export const newCaptureId = () => randomBytes(24).toString('hex');
 
@@ -64,6 +69,7 @@ export class CaptureStore {
     this.#used += bytes.length;          // reserve before the first await so parallel writes cannot overshoot
     const id = newCaptureId();
     const full = { capture_id: id, ...meta, size_bytes: bytes.length, sha256: sha256Hex(bytes) };
+    if (this.cfg.macKey) full.mac = macOf(this.cfg.macKey, full);
     const tmp = n => join(this.cfg.dir, `.tmp-${id}.${n}`);
     const fin = n => join(this.cfg.dir, `${id}.${n}`);
     const put = async (path, data) => { const fh = await open(path, 'wx', 0o600); try { await fh.writeFile(data); await fh.sync(); } finally { await fh.close(); } };
@@ -95,6 +101,13 @@ export class CaptureStore {
   async readMeta(id) {
     if (!this.cfg.dir || !isCaptureId(id)) return null;
     try { return JSON.parse(await readFile(join(this.cfg.dir, id + '.json'), 'utf8')); } catch { return null; }
+  }
+
+  // True when the metadata is untampered. Always true without a key; with one, a missing or wrong mac is false.
+  metaIntact(meta) {
+    if (!this.cfg.macKey) return true;
+    if (typeof meta?.mac !== 'string' || !/^[0-9a-f]{64}$/.test(meta.mac)) return false;
+    return timingSafeEqual(Buffer.from(meta.mac, 'hex'), Buffer.from(macOf(this.cfg.macKey, meta), 'hex'));
   }
 
   // Stored bytes of a capture, or null when the body is gone.

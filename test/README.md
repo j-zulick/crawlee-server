@@ -21,6 +21,7 @@ npm run check                             # syntax check of src/*.mjs, then the 
 | `firecrawl.test.mjs` | Rendering, blocked-page recovery, `mode=map`, render budget (fake Firecrawl) |
 | `crawl-response.test.mjs` | Response shape against `crawl-response.schema.json` |
 | `capture.test.mjs` | Page captures: byte-identical body and SHA-256, redirects, size caps, unwritable directory, atomic writes (SIGKILL mid-write), TTL sweep |
+| `captures.security.test.mjs` | Tamper (edited, truncated, deleted, swapped bodies; edited metadata), cross-client ownership, 401s, path traversal, no page content in logs or `/healthz` |
 | `fixture-site.mjs` | Helper, not a test: the local site the crawls run against |
 
 ## Coverage

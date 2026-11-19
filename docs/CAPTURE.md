@@ -24,7 +24,9 @@ Two files per capture in `CRAWL_CAPTURE_DIR`, both mode 0600:
   before any charset decoding. For a page rendered through Firecrawl: the rendered HTML used for extraction, as UTF-8.
 - `<capture_id>.json`: `capture_id`, `url` (final, after redirects), `requested_url`, `fetched_at`, `http_status`,
   `content_type`, `size_bytes`, `sha256`, `fetch_method` (the record's `fetched_via`: `http` or `firecrawl`),
-  `rendered`, `recovered` (plain HTTP failed and Firecrawl fetched it), `client_id`, `crawl_id`.
+  `rendered`, `recovered` (plain HTTP failed and Firecrawl fetched it), `client_id`, `crawl_id`, `mac`. The `mac` is an HMAC-SHA-256
+  over all other fields, keyed from the server token; a read whose metadata fails it returns 500 `capture_corrupt`
+  (see [SECURITY.md](../SECURITY.md)).
 
 `client_id` is `tok_` plus 16 hex characters of an HMAC-SHA-256 of the bearer token under a fixed server label. The
 token is never stored or logged. `client_id` is not returned in crawl responses or `/healthz`. Ownership is checked

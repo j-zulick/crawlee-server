@@ -14,6 +14,9 @@
   `GET /v1/captures/:id/meta`, limited to the client that made the crawl. Unknown, expired and foreign ids give the same
   404; malformed ids give 400; the SHA-256 is rechecked on every read (500 `capture_corrupt` on mismatch). Reads skip the
   crawl queue and are limited by `CRAWL_CAPTURE_READS_PER_MIN` (60).
+- Capture metadata carries an HMAC-SHA-256 `mac` keyed from the server token; edited metadata (including a replaced
+  body with a matching edited `sha256`) gives 500 `capture_corrupt`.
+- `test/captures.security.test.mjs`: tamper and cross-client tests; threat model in SECURITY.md.
 - `compose.yaml` mounts a `crawlee-captures` volume; the root filesystem stays read-only.
 
 
