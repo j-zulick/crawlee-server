@@ -257,3 +257,20 @@ test('ssrf guard refuses a start URL that redirects to a loopback host', async t
   t.diagnostic("trap hits: " + trapHits);
   assert.ok(refusal, 'expected a refusal: ' + JSON.stringify({ refused: out.refused, failures: out.failures }));
 });
+
+test('non-HTML responses are reported as clean failures, not extraction errors', async t => {
+  const server = http.createServer((req, res) => {
+    if (req.url === '/robots.txt') { res.writeHead(404); return res.end(); }
+    const status = req.url === '/missing.json' ? 404 : 200;
+    res.writeHead(status, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: status === 404 ? 'not found' : null, ok: status === 200 }));
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const missing = await runCrawl({ start_urls: [base + '/missing.json'], mode: 'page', render: 'never' }, policy);
+  assert.deepEqual(missing.failures, [{ url: base + '/missing.json', error: 'http_404' }]);
+  const ok = await runCrawl({ start_urls: [base + '/data.json'], mode: 'page', render: 'never' }, policy);
+  assert.deepEqual(ok.failures, [{ url: base + '/data.json', error: 'non_html' }]);
+  assert.ok(![...missing.failures, ...ok.failures].some(f => /is not a function/.test(f.error)));
+});

@@ -200,6 +200,12 @@ export async function runCrawl(reqBody, policy = crawlPolicy(process.env), { fet
       const depth = request.userData.depth ?? 0;
       if (!onSite(finalUrl)) { refused.push({ url: finalUrl, reason: 'redirected_off_site' }); return; }
       if (depth > 0 && !wanted(finalUrl)) { refused.push({ url: finalUrl, reason: 'excluded_after_redirect' }); return; }
+      // Non-HTML bodies (JSON, plain text, ...) reach the handler without a Cheerio $; report them cleanly.
+      if (typeof $ !== 'function') {
+        const status = response?.statusCode;
+        failures.push({ url: finalUrl, error: status >= 400 ? `http_${status}` : 'non_html' });
+        return;
+      }
       pages++;
       let page$ = $, pageUrl = finalUrl, via = 'http', source = null;
       const raw = crawler.raw.get(request);

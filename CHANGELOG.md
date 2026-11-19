@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Non-HTML responses (e.g. a JSON 404) are reported as `failures: [{ url, error: "http_<status>" | "non_html" }]` instead of `$ is not a function`; extraction is skipped for them.
 - `url_refused` (400) now lists the refused start URLs and the guard's reason in `refused`; no resolved IPs are returned.
 - Docs: Komodo stack example (deploy/komodo/compose.yaml) and deployment guide.
 
