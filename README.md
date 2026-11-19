@@ -76,6 +76,12 @@ Crawlee owns the queue, limits, robots.txt, SSRF checks and extraction. Firecraw
 The response has `status`, `stats`, `records`, `failures`, `refused` (with reasons), a `firecrawl` block (pages
 rendered, blocked pages recovered, failures) and `limitations`.
 
+Errors from `POST /v1/crawl`:
+
+| Status | Meaning |
+|---|---|
+| 400 `url_refused` | one or more start URLs failed the address guard. `refused` lists each one as `{ "url", "reason" }` (reasons such as `private_address`, `private_host`, `dns_failed`, `port_not_allowed`, `scheme_not_allowed`, `credentials_in_url`, `invalid_url`); `reason` repeats the first. No IP addresses are returned, and nothing is crawled |
+
 ## Reading captures
 
 `GET /v1/captures/:id` returns the stored raw page with its original `Content-Type` and the headers

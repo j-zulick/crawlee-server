@@ -77,7 +77,7 @@ export function createServer({ env = process.env, crawl = runCrawl } = {}) {
       finally { release(); }
     } catch (e) {
       if (e instanceof BadRequest) return send(res, 400, { error: e.message });
-      if (e instanceof UrlRefused) return send(res, 400, { error: 'url_refused', reason: e.reason });
+      if (e instanceof UrlRefused) return send(res, 400, { error: 'url_refused', reason: e.reason, ...(e.refused && { refused: e.refused }) });
       console.error('crawl_error', e?.name, String(e?.message || '').slice(0, 200));
       return send(res, 500, { error: 'crawl_failed' });
     }

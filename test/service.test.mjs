@@ -229,6 +229,11 @@ test('HTTP server: auth, validation and crawl', async t => {
   assert.equal((await post({ start_urls: [] })).status, 400);
   const refused = await post({ start_urls: ['http://169.254.169.254/'] });
   assert.equal(refused.status, 400); assert.equal((await refused.json()).reason, 'private_address');
+  const mixed = await post({ start_urls: [base + '/inventory', 'http://10.0.0.5/x'] });
+  assert.equal(mixed.status, 400);
+  const mixedBody = await mixed.json();
+  assert.equal(mixedBody.error, 'url_refused');
+  assert.deepEqual(mixedBody.refused, [{ url: 'http://10.0.0.5/x', reason: 'private_address' }]);
   const ok = await post({ start_urls: [base + '/inventory'], profile: 'vehicle', include_patterns: [base + "/inventory/*"] });
   assert.equal(ok.status, 200); assert.equal((await ok.json()).stats.records, 3);
 });

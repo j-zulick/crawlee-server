@@ -85,7 +85,9 @@ export async function runCrawl(reqBody, policy = crawlPolicy(process.env), { fet
   const req = validateRequest(reqBody, policy);
   const started = Date.now();
   const id = randomUUID();
-  for (const u of req.start_urls) await checkUrl(u, policy);
+  const refusedStarts = [];
+  for (const u of req.start_urls) { try { await checkUrl(u, policy); } catch (e) { if (!(e instanceof UrlRefused)) throw e; refusedStarts.push({ url: u, reason: e.reason }); } }
+  if (refusedStarts.length) throw Object.assign(new UrlRefused(refusedStarts[0].reason), { refused: refusedStarts });
   const hosts = new Set(req.start_urls.map(u => new URL(u).hostname.toLowerCase()));
   const include = req.include.map(globToRe); const exclude = req.exclude.map(globToRe);
   const onSite = u => hosts.has(new URL(u).hostname.toLowerCase());

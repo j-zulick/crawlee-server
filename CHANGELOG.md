@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `url_refused` (400) now lists the refused start URLs and the guard's reason in `refused`; no resolved IPs are returned.
 - Docs: Komodo stack example (deploy/komodo/compose.yaml) and deployment guide.
 
 ## 2.2.0 — Nov 2026
