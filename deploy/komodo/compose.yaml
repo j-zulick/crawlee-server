@@ -4,19 +4,23 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8794:8794"
-      - "172.17.0.1:8794:8794"   # docker bridge, for clients in other containers; remove if not needed
+      # For clients in other containers on the same host. 172.17.0.1 is the gateway of Docker's default bridge on
+      # Linux; check yours with `docker network inspect bridge` (it differs with a custom `bip` and on Docker Desktop).
+      # Remove the line if no container needs to reach this service.
+      - "172.17.0.1:8794:8794"
     environment:
       CRAWL_TOKEN_FILE: /run/secrets/crawl.token
       CRAWL_MAX_PAGES: "300"
       CRAWL_MAX_CONCURRENCY: "5"
       CRAWL_MAX_SECONDS: "150"
-      FIRECRAWL_URL: https://<your-firecrawl-host>   # optional; remove this and the key line to disable rendering
-      FIRECRAWL_API_KEY_FILE: /run/secrets/firecrawl.key
+      # Firecrawl rendering is off by default. To turn it on, uncomment these two lines and the key mount below.
+      # FIRECRAWL_URL: https://<your-firecrawl-host>
+      # FIRECRAWL_API_KEY_FILE: /run/secrets/firecrawl.key
       # CRAWL_IGNORE_ROBOTS: "true"   # default respects robots.txt; only set this for your own deployment
       CRAWL_CAPTURE_DEFAULT: "false"
     volumes:
       - /path/on/host/crawl.token:/run/secrets/crawl.token:ro
-      - /path/on/host/firecrawl.key:/run/secrets/firecrawl.key:ro
+      # - /path/on/host/firecrawl.key:/run/secrets/firecrawl.key:ro
     read_only: true
     tmpfs:
       - /tmp:size=256m
