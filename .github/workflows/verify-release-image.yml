@@ -1,0 +1,17 @@
+name: Verify deployed image
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'deploy/komodo/**'
+      - '.github/workflows/verify-release-image.yml'
+permissions:
+  contents: read
+jobs:
+  fixture-capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker compose -f deploy/komodo/compose.yaml config --quiet
+      - run: bash deploy/komodo/verify-image.sh

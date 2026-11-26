@@ -113,6 +113,10 @@ filesystem stays read-only; [`compose.yaml`](compose.yaml) mounts the named volu
   `CRAWL_CAPTURE_READS_PER_MIN` in the Komodo stack's environment next to the other `CRAWL_CAPTURE_*` entries.
 - If the volume is missing or not writable, crawls with `capture: true` still return records with status `partial`.
 
+## Verify the published image in isolation
+
+Run `bash deploy/komodo/verify-image.sh` with Docker, curl, jq and OpenSSL. It pulls the pinned image, starts it with a read-only root and disposable capture volume, checks its version with rendering off, then requests one book detail page from Books to Scrape. The check requires the expected title, one stored capture and a matching SHA-256 after downloading the captured bytes. The test prints the digest and removes its container and volume. If the fixture site is unavailable, the crawl check fails and can be rerun when the site returns. The [image verification workflow](.github/workflows/verify-release-image.yml) runs the same script.
+
 ## Rollback
 
 Komodo → `crawlee-server` → set the previous image tag → Deploy. Images are immutable and versioned, so a rollback is
