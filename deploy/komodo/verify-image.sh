@@ -20,11 +20,12 @@ cid=$(docker run -d --read-only --tmpfs /tmp:size=256m --cap-drop ALL \
   --security-opt no-new-privileges -e CRAWL_TOKEN \
   -v "$volume:/var/lib/crawlee-captures" -p 127.0.0.1::8794 "$image")
 endpoint=http://$(docker port "$cid" 8794/tcp)
-curl -fsS --retry 15 --retry-delay 1 --retry-connrefused "$endpoint/healthz" > "$scratch/health"
+curl -fsS --retry 15 --retry-delay 1 --retry-all-errors --max-time 4 --retry-max-time 30 "$endpoint/healthz" > "$scratch/health"
 jq -e --arg version "$version" '.ok and .version == $version and .firecrawl == false' "$scratch/health" >/dev/null
 request=$(jq -nc --arg url "$fixture" '{start_urls:[$url],mode:"page",render:"never",max_pages:1,capture:true}')
 curl -fsS --max-time 100 -H "Authorization: Bearer $CRAWL_TOKEN" -H 'Content-Type: application/json' \
   --data "$request" "$endpoint/v1/crawl" > "$scratch/crawl"
+jq '{status, failures: (.failures | length), capture, titles: [.records[].title]}' "$scratch/crawl"
 jq -e '.capture.stored == 1 and (.records | length) == 1 and .records[0].title == "A Light in the Attic"' "$scratch/crawl" >/dev/null
 id=$(jq -er '.records[0].capture_id' "$scratch/crawl")
 expected=$(jq -er '.records[0].sha256' "$scratch/crawl")
