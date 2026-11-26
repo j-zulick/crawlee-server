@@ -30,13 +30,14 @@ placeholders.
    uid 1000 with mode 600 or stricter:
    ```bash
    umask 077; openssl rand -hex 32 > /path/on/host/crawl.token
-   # put the Firecrawl API key in /path/on/host/firecrawl.key
-   sudo chown 1000:1000 /path/on/host/crawl.token /path/on/host/firecrawl.key
-   chmod 600 /path/on/host/crawl.token /path/on/host/firecrawl.key
+   sudo chown 1000:1000 /path/on/host/crawl.token
+   chmod 600 /path/on/host/crawl.token
+   # only if you use Firecrawl: put its API key in /path/on/host/firecrawl.key, same owner and mode
    ```
 2. **Create the stack.** Komodo → Stacks → New stack `crawlee-server`, with the compose defined in the UI: paste the
-   contents of `deploy/komodo/compose.yaml`. Replace the host paths, set `FIRECRAWL_URL` (or remove it and the
-   `FIRECRAWL_API_KEY_FILE` line), and remove the `172.17.0.1` port line if no container needs to reach it.
+   contents of `deploy/komodo/compose.yaml`. Replace the host paths. Firecrawl is off as written: to use it, uncomment
+   `FIRECRAWL_URL`, `FIRECRAWL_API_KEY_FILE` and the key mount. The `172.17.0.1` port line assumes Docker's default
+   bridge on Linux; remove it if no container needs to reach the service, or change it to your bridge gateway.
 3. **Deploy**, then verify:
    ```bash
    TOKEN=$(cat /path/on/host/crawl.token)

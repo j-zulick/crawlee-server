@@ -16,6 +16,9 @@ the page was fetched. One container, one token, safe against requests to private
 - **Who:** anyone collecting a catalogue, listing set or docs section from a known site: research and SEO tooling,
   data pipelines, AI agents that need clean records rather than page dumps.
 
+**Running it for real:** [deployment guide](DEPLOYMENT.md) (pinned image, health check, upgrade and rollback) ·
+[Komodo stack example](deploy/komodo/compose.yaml)
+
 ## Try it in 2 minutes
 
 ```bash
