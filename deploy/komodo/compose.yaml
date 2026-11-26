@@ -6,8 +6,8 @@ services:
       - "127.0.0.1:8794:8794"
       # For clients in other containers on the same host. 172.17.0.1 is the gateway of Docker's default bridge on
       # Linux; check yours with `docker network inspect bridge` (it differs with a custom `bip` and on Docker Desktop).
-      # Remove the line if no container needs to reach this service.
-      - "172.17.0.1:8794:8794"
+      # Enable this mapping only if the bridge clients need it, after confirming your host gateway.
+      # - "172.17.0.1:8794:8794"
     environment:
       CRAWL_TOKEN_FILE: /run/secrets/crawl.token
       CRAWL_MAX_PAGES: "300"

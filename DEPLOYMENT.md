@@ -36,8 +36,7 @@ placeholders.
    ```
 2. **Create the stack.** Komodo → Stacks → New stack `crawlee-server`, with the compose defined in the UI: paste the
    contents of `deploy/komodo/compose.yaml`. Replace the host paths. Firecrawl is off as written: to use it, uncomment
-   `FIRECRAWL_URL`, `FIRECRAWL_API_KEY_FILE` and the key mount. The `172.17.0.1` port line assumes Docker's default
-   bridge on Linux; remove it if no container needs to reach the service, or change it to your bridge gateway.
+   `FIRECRAWL_URL`, `FIRECRAWL_API_KEY_FILE` and the key mount. The optional `172.17.0.1` port mapping assumes Docker's default bridge on Linux. Enable it only when needed, using the gateway reported by your host.
 3. **Deploy**, then verify:
    ```bash
    TOKEN=$(cat /path/on/host/crawl.token)
@@ -112,6 +111,10 @@ filesystem stays read-only; [`compose.yaml`](compose.yaml) mounts the named volu
 - Stored captures are read back with `GET /v1/captures/:id` and `/meta` (same token; owner only). Keep
   `CRAWL_CAPTURE_READS_PER_MIN` in the Komodo stack's environment next to the other `CRAWL_CAPTURE_*` entries.
 - If the volume is missing or not writable, crawls with `capture: true` still return records with status `partial`.
+
+## Verify the published image in isolation
+
+Run `bash deploy/komodo/verify-image.sh` with Docker, curl, jq and OpenSSL. It pulls the pinned image, starts it with a read-only root and disposable capture volume, checks its version with rendering off, then requests one book detail page from Books to Scrape. The check requires the expected title, one stored capture and a matching SHA-256 after downloading the captured bytes. The test prints the digest and removes its container and volume. If the fixture site is unavailable, the crawl check fails and can be rerun when the site returns. The [image verification workflow](.github/workflows/verify-release-image.yml) runs the same script.
 
 ## Rollback
 
