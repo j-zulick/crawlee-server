@@ -117,7 +117,7 @@ The reference deployment runs as a Komodo stack with a pinned image tag (see [DE
 | Firecrawl against a live self-hosted instance | **Locally verified:** see [CHANGELOG](CHANGELOG.md) |
 | Playwright browser mode as an alternative to Firecrawl | **Proposed** (v2.1) |
 | Durable jobs that survive restarts | **Proposed** (v2.3) |
-| Hash-checked page captures (`capture: true`): raw body, SHA-256, fetch time | **Demonstrated:** tests in `test/capture.test.mjs`; container start with a read-only root and a volume not yet run in CI |
+| Hash-checked page captures (`capture: true`): raw body, SHA-256, fetch time | **Demonstrated:** tests in `test/capture.test.mjs` and a [published-image check](https://github.com/j-zulick/crawlee-server/actions/runs/45897364296) that read back a captured fixture page from a writable volume with a read-only root |
 
 ## Server settings
 

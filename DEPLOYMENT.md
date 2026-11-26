@@ -36,8 +36,7 @@ placeholders.
    ```
 2. **Create the stack.** Komodo → Stacks → New stack `crawlee-server`, with the compose defined in the UI: paste the
    contents of `deploy/komodo/compose.yaml`. Replace the host paths. Firecrawl is off as written: to use it, uncomment
-   `FIRECRAWL_URL`, `FIRECRAWL_API_KEY_FILE` and the key mount. The `172.17.0.1` port line assumes Docker's default
-   bridge on Linux; remove it if no container needs to reach the service, or change it to your bridge gateway.
+   `FIRECRAWL_URL`, `FIRECRAWL_API_KEY_FILE` and the key mount. The optional `172.17.0.1` port mapping assumes Docker's default bridge on Linux. Enable it only when needed, using the gateway reported by your host.
 3. **Deploy**, then verify:
    ```bash
    TOKEN=$(cat /path/on/host/crawl.token)
