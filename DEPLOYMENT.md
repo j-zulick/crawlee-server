@@ -59,6 +59,42 @@ placeholders.
    writable volume for `CRAWL_CAPTURE_DIR` (see [Page captures](#page-captures-optional)). The root filesystem is
    read-only, so without it captures are not stored.
 
+## Firecrawl for JavaScript pages (optional)
+
+crawlee-server renders JavaScript pages through Firecrawl when `FIRECRAWL_URL` is set. The self-hosted Firecrawl used
+with it is the fork [`j-zulick/firecrawl`](https://github.com/j-zulick/firecrawl), which adds, on top of upstream:
+
+- **Upstream sync (Nov 2026)** with the NuQ job harness: one `api` container runs the API and its workers, next to
+  `playwright-service`, `rabbitmq` and `nuq-postgres`. Redis is external (`REDIS_URL`). `/v1` stays, `/v2` is current.
+- **Self-hosted `/map` discovery** when fire-engine is not available.
+- **Browser recovery:** `playwright-service` relaunches Chromium once (single-flight) after a crash.
+- **Compose health checks** that use `node` (the API image has no `curl`), memory limits per service, and bounded logs.
+- **Fork CI** (compose config, ops scripts, playwright-service tests, API type check and knip) and an end-to-end
+  smoke test, [`ops/selfhost-smoke.sh`](https://github.com/j-zulick/firecrawl/blob/main/ops/selfhost-smoke.sh).
+
+Operator notes: [`ops/README.md`](https://github.com/j-zulick/firecrawl/blob/main/ops/README.md) and
+[`ops/ARCHITECTURE.md`](https://github.com/j-zulick/firecrawl/blob/main/ops/ARCHITECTURE.md) in the fork.
+
+**Deploy with Komodo.** Run Firecrawl as its own stack, separate from `crawlee-server`. Either point a stack at the
+fork's Git repo (branch `main`, file `docker-compose.yaml`), or import a Compose project that already runs on the host
+by its Compose project name. Keep `REDIS_URL` and `POSTGRES_PASSWORD` in the stack's environment, not in the repo.
+
+- **DeployStack does not rebuild images.** After a code change, build the changed services (`api`,
+  `playwright-service`) from the checkout, then Deploy. Otherwise the new compose runs the old code.
+- **Check the running revision,** not just container health: the commit Komodo shows for the stack should match
+  `main`, and the running images should be newer than that commit.
+- **Smoke test** on a deployment you are allowed to test (read-only against the target site; it creates one small
+  crawl and one 2-URL batch scrape):
+  ```bash
+  bash ops/selfhost-smoke.sh http://127.0.0.1:3002
+  # behind a bearer-token proxy:
+  FIRECRAWL_TOKEN=<token> bash ops/selfhost-smoke.sh https://firecrawl.example.com
+  ```
+  Record the commit and the PASS/FAIL lines with the date.
+
+**Connect crawlee-server.** Set `FIRECRAWL_URL` (and `FIRECRAWL_API_KEY_FILE` if Firecrawl sits behind a token) in the
+`crawlee-server` stack, Deploy, and check that `/healthz` reports `"firecrawl":true`.
+
 ## Page captures (optional)
 
 `capture: true` requests write raw pages to `CRAWL_CAPTURE_DIR` (see [docs/CAPTURE.md](docs/CAPTURE.md)). The root
